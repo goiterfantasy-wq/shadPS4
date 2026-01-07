@@ -247,10 +247,20 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
         default:
             UNREACHABLE_MSG("Wrong PM4 type {}", type);
             break;
-        case 0:
-            UNREACHABLE_MSG("Unimplemented PM4 type 0, base reg: {}, size: {}",
-                            header->type0.base.Value(), header->type0.NumWords());
+        case 0: {
+            const u32 base_reg = header->type0.base.Value();
+            const u32 num_words = header->type0.NumWords();
+            const u32* data = reinterpret_cast<const u32*>(header) + 1;
+
+            if (base_reg + num_words <= Regs::NumRegs) {
+                std::memcpy(&regs.reg_array[base_reg], data, num_words * sizeof(u32));
+            } else {
+                LOG_WARNING(Render_Vulkan, "Type 0 write out of bounds: base={} count={}", base_reg,
+                            num_words);
+            }
+            dcb = NextPacket(dcb, num_words + 1);
             break;
+        }
         case 2:
             // Type-2 packet are used for padding purposes
             dcb = NextPacket(dcb, 1);
@@ -1041,6 +1051,25 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         if (header->type == 2) {
             // Type-2 packet are used for padding purposes
             next_dw_off = 1;
+            acb = NextPacket(acb, next_dw_off);
+            if constexpr (!is_indirect) {
+                *queue.read_addr += next_dw_off;
+                *queue.read_addr %= queue.ring_size_dw;
+            }
+            continue;
+        }
+
+        if (header->type == 0) {
+            const u32 base_reg = header->type0.base.Value();
+            const u32 num_words = header->type0.NumWords();
+            const u32* data = reinterpret_cast<const u32*>(header) + 1;
+
+            if (base_reg + num_words <= Regs::NumRegs) {
+                std::memcpy(&regs.reg_array[base_reg], data, num_words * sizeof(u32));
+            } else {
+                LOG_WARNING(Render_Vulkan, "Type 0 write out of bounds: base={} count={}", base_reg,
+                            num_words);
+            }
             acb = NextPacket(acb, next_dw_off);
             if constexpr (!is_indirect) {
                 *queue.read_addr += next_dw_off;

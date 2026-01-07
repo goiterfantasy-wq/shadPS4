@@ -102,10 +102,10 @@ public:
     template <typename... Args>
     [[nodiscard]] Id ConstU32(Args&&... values) {
         constexpr u32 size = static_cast<u32>(sizeof...(values));
-        static_assert(size >= 2);
+        static_assert(size >= 1);
         const std::array constituents{Constant(U32[1], values)...};
-        const Id type = size <= 4 ? U32[size] : TypeArray(U32[1], ConstU32(size));
-        return ConstantComposite(type, constituents);
+        const Id type = size == 1 ? U32[1] : (size <= 4 ? U32[size] : TypeArray(U32[1], ConstU32(size)));
+        return size == 1 ? constituents[0] : ConstantComposite(type, constituents);
     }
 
     [[nodiscard]] Id ConstS32(s32 value) {
@@ -115,10 +115,10 @@ public:
     template <typename... Args>
     [[nodiscard]] Id ConstS32(Args&&... values) {
         constexpr u32 size = static_cast<u32>(sizeof...(values));
-        static_assert(size >= 2);
+        static_assert(size >= 1);
         const std::array constituents{Constant(S32[1], values)...};
-        const Id type = size <= 4 ? S32[size] : TypeArray(S32[1], ConstU32(size));
-        return ConstantComposite(type, constituents);
+        const Id type = size == 1 ? S32[1] : (size <= 4 ? S32[size] : TypeArray(S32[1], ConstU32(size)));
+        return size == 1 ? constituents[0] : ConstantComposite(type, constituents);
     }
 
     [[nodiscard]] Id ConstF32(f32 value) {
@@ -128,10 +128,10 @@ public:
     template <typename... Args>
     [[nodiscard]] Id ConstF32(Args... values) {
         constexpr u32 size = static_cast<u32>(sizeof...(values));
-        static_assert(size >= 2);
+        static_assert(size >= 1);
         const std::array constituents{Constant(F32[1], values)...};
-        const Id type = size <= 4 ? F32[size] : TypeArray(F32[1], ConstU32(size));
-        return ConstantComposite(type, constituents);
+        const Id type = size == 1 ? F32[1] : (size <= 4 ? F32[size] : TypeArray(F32[1], ConstU32(size)));
+        return size == 1 ? constituents[0] : ConstantComposite(type, constituents);
     }
 
     inline Id AddLabel() {

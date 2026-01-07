@@ -265,19 +265,34 @@ Id EmitCubeFaceIndex(EmitContext& ctx, IR::Inst* inst, Id cube_coords) {
 
 Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
     if (ctx.profile.supports_image_fp32_atomic_min_max) {
-        return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
+        // TODO: Implement native support if available
+        // return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
     }
 
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    const auto sign_bit_set =
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u));
+    const auto& texture = ctx.images[handle & 0xFFFF];
+    const Id pointer{ctx.OpImageTexelPointer(ctx.image_u32, texture.id, coords, ctx.ConstU32(0U))};
+    const Id scope{ctx.ConstU32(static_cast<u32>(spv::Scope::Device))};
+    const Id semantics{ctx.u32_zero_value};
 
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitImageAtomicUMax32(ctx, inst, handle, coords, u32_value)),
-        EmitBitCastF32U32(ctx, EmitImageAtomicSMin32(ctx, inst, handle, coords, u32_value)));
+    const Id loop_label = ctx.OpLabel();
+    const Id exit_label = ctx.OpLabel();
 
-    return result;
+    ctx.OpBranch(loop_label);
+    ctx.AddLabel(loop_label);
+
+    const Id current = ctx.OpAtomicLoad(ctx.U32[1], pointer, scope, semantics);
+    const Id current_f32 = ctx.OpBitcast(ctx.F32[1], current);
+    const Id min_val = ctx.OpFMin(ctx.F32[1], current_f32, value);
+    const Id target = ctx.OpBitcast(ctx.U32[1], min_val);
+
+    const Id res =
+        ctx.OpAtomicCompareExchange(ctx.U32[1], pointer, scope, semantics, semantics, target, current);
+    const Id success = ctx.OpIEqual(ctx.U1[1], res, current);
+
+    ctx.OpBranchConditional(success, exit_label, loop_label);
+    ctx.AddLabel(exit_label);
+
+    return ctx.OpBitcast(ctx.F32[1], res);
 }
 
 static std::pair<Id, Id> AtomicArgs(EmitContext& ctx) {
