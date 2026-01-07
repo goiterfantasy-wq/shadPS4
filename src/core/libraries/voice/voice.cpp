@@ -52,7 +52,7 @@ s32 PS4_SYSV_ABI sceVoiceGetPortAttr() {
 }
 
 s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
-    LOG_ERROR(Lib_Voice, "called port_id={}", port_id);
+    LOG_INFO(Lib_Voice, "called port_id={}", port_id);
 
     if (!info) {
         return SCE_VOICE_ERROR_ARGUMENT_INVALID;
