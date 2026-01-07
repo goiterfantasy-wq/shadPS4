@@ -717,8 +717,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         }
                     } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
                         const u64 src = copy->SrcAddress<u64>();
-                        if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
-                                                    reinterpret_cast<const void*>(src), num_bytes)) {
+                        if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst),
+                                                     reinterpret_cast<const void*>(src), num_bytes)) {
                             std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
                         }
                     } else {
@@ -1059,8 +1059,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                     }
                 } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
                     const u64 src = copy->SrcAddress<u64>();
-                    if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
-                                                reinterpret_cast<const void*>(src), num_bytes)) {
+                    if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst),
+                                                 reinterpret_cast<const void*>(src), num_bytes)) {
                         std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
                     }
                 } else {
