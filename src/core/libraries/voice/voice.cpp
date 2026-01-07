@@ -58,6 +58,18 @@ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
         return SCE_VOICE_ERROR_ARGUMENT_INVALID;
     }
 
+    if (port_id == 0xFFFFFFFF) {
+        // Special case: Maybe querying if any ports are active?
+        // For now, return a generic "inactive" or default state
+        info->port_type = 0;
+        info->state = 0; // 0 = None/Inactive?
+        info->byte_count = 0;
+        info->frame_size = 0;
+        info->edge_count = 0;
+        info->reserved = 0;
+        return ORBIS_OK;
+    }
+
     info->port_type = 0;
     info->state = 3;
     info->byte_count = 0;
