@@ -387,6 +387,9 @@ struct AddressSpace::Impl {
 
     void Protect(VAddr virtual_addr, size_t size, MemoryPermission perms) {
         DWORD new_flags{};
+        const bool read = True(perms & MemoryPermission::Read);
+        const bool write = True(perms & MemoryPermission::Write);
+        const bool execute = True(perms & MemoryPermission::Execute);
 
         if (write && !read) {
             // While write-only CPU protection isn't possible, write-only GPU protection is.
