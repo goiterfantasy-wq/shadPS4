@@ -124,6 +124,7 @@ struct VirtualMemoryArea {
     PAddr phys_base = 0;
     VMAType type = VMAType::Free;
     MemoryProt prot = MemoryProt::NoAccess;
+    MemoryProt max_prot = MemoryProt::NoAccess;
     bool disallow_merge = false;
     std::string name = "";
     uintptr_t fd = 0;
@@ -152,7 +153,7 @@ struct VirtualMemoryArea {
             phys_base + size != next.phys_base) {
             return false;
         }
-        if (prot != next.prot || type != next.type) {
+        if (prot != next.prot || type != next.type || max_prot != next.max_prot) {
             return false;
         }
         return true;
@@ -250,6 +251,9 @@ public:
     bool TryCopyBacking(void* address, const void* data, u32 num_bytes) {
         return TryWriteBacking(address, data, num_bytes);
     }
+
+    bool Read(VAddr address, void* data, u64 size);
+    bool Write(VAddr address, const void* data, u64 size);
 
     void SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1, bool use_extended_mem2);
 

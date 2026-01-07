@@ -263,4 +263,81 @@ Id EmitCubeFaceIndex(EmitContext& ctx, IR::Inst* inst, Id cube_coords) {
     }
 }
 
+Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
+    if (ctx.profile.supports_image_fp32_atomic_min_max) {
+        return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
+    }
+
+    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
+    const auto sign_bit_set =
+        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u));
+
+    const auto result = ctx.OpSelect(
+        ctx.F32[1], sign_bit_set,
+        EmitBitCastF32U32(ctx, EmitImageAtomicUMax32(ctx, inst, handle, coords, u32_value)),
+        EmitBitCastF32U32(ctx, EmitImageAtomicSMin32(ctx, inst, handle, coords, u32_value)));
+
+    return result;
+}
+
+static std::pair<Id, Id> AtomicArgs(EmitContext& ctx) {
+    const Id scope{ctx.ConstU32(static_cast<u32>(spv::Scope::Device))};
+    const Id semantics{ctx.u32_zero_value};
+    return {scope, semantics};
+}
+
+Id EmitImageAtomicInc32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
+    const auto& texture = ctx.images[handle & 0xFFFF];
+    const Id pointer{ctx.OpImageTexelPointer(ctx.image_u32, texture.id, coords, ctx.ConstU32(0U))};
+    const auto [scope, semantics] = AtomicArgs(ctx);
+
+    const Id loop_label = ctx.OpLabel();
+    const Id exit_label = ctx.OpLabel();
+
+    ctx.OpBranch(loop_label);
+    ctx.AddLabel(loop_label);
+
+    const Id current = ctx.OpAtomicLoad(ctx.U32[1], pointer, scope, semantics);
+    const Id cond = ctx.OpUGreaterThanEqual(ctx.U1[1], current, value);
+    const Id plus_one = ctx.OpIAdd(ctx.U32[1], current, ctx.ConstU32(1));
+    const Id target = ctx.OpSelect(ctx.U32[1], cond, ctx.ConstU32(0), plus_one);
+
+    const Id res =
+        ctx.OpAtomicCompareExchange(ctx.U32[1], pointer, scope, semantics, semantics, target, current);
+    const Id success = ctx.OpIEqual(ctx.U1[1], res, current);
+
+    ctx.OpBranchConditional(success, exit_label, loop_label);
+    ctx.AddLabel(exit_label);
+
+    return res;
+}
+
+Id EmitImageAtomicDec32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
+    const auto& texture = ctx.images[handle & 0xFFFF];
+    const Id pointer{ctx.OpImageTexelPointer(ctx.image_u32, texture.id, coords, ctx.ConstU32(0U))};
+    const auto [scope, semantics] = AtomicArgs(ctx);
+
+    const Id loop_label = ctx.OpLabel();
+    const Id exit_label = ctx.OpLabel();
+
+    ctx.OpBranch(loop_label);
+    ctx.AddLabel(loop_label);
+
+    const Id current = ctx.OpAtomicLoad(ctx.U32[1], pointer, scope, semantics);
+    const Id cond0 = ctx.OpIEqual(ctx.U1[1], current, ctx.ConstU32(0));
+    const Id cond1 = ctx.OpUGreaterThan(ctx.U1[1], current, value);
+    const Id reset = ctx.OpLogicalOr(ctx.U1[1], cond0, cond1);
+    const Id minus_one = ctx.OpISub(ctx.U32[1], current, ctx.ConstU32(1));
+    const Id target = ctx.OpSelect(ctx.U32[1], reset, value, minus_one);
+
+    const Id res =
+        ctx.OpAtomicCompareExchange(ctx.U32[1], pointer, scope, semantics, semantics, target, current);
+    const Id success = ctx.OpIEqual(ctx.U1[1], res, current);
+
+    ctx.OpBranchConditional(success, exit_label, loop_label);
+    ctx.AddLabel(exit_label);
+
+    return res;
+}
+
 } // namespace Shader::Backend::SPIRV

@@ -144,6 +144,51 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u32 num_byt
     return true;
 }
 
+bool MemoryManager::Read(VAddr address, void* data, u64 size) {
+    if (!IsValidMapping(address, size)) {
+        return false;
+    }
+    u8* dest = static_cast<u8*>(data);
+    auto vma = FindVMA(address);
+    while (size > 0) {
+        u64 copy_size = std::min<u64>(vma->second.size - (address - vma->first), size);
+        if (vma->second.IsMapped()) {
+            u8* backing = impl.BackingBase() + vma->second.phys_base + (address - vma->second.base);
+            std::memcpy(dest, backing, copy_size);
+        } else {
+            std::memset(dest, 0, copy_size);
+        }
+        size -= copy_size;
+        address += copy_size;
+        dest += copy_size;
+        ++vma;
+    }
+    return true;
+}
+
+bool MemoryManager::Write(VAddr address, const void* data, u64 size) {
+    if (!IsValidMapping(address, size)) {
+        return false;
+    }
+    const u8* src = static_cast<const u8*>(data);
+    auto vma = FindVMA(address);
+    while (size > 0) {
+        u64 copy_size = std::min<u64>(vma->second.size - (address - vma->first), size);
+        if (vma->second.IsMapped()) {
+            if (HasPhysicalBacking(vma->second) || vma->second.type == VMAType::File) {
+                u8* backing =
+                    impl.BackingBase() + vma->second.phys_base + (address - vma->second.base);
+                std::memcpy(backing, src, copy_size);
+            }
+        }
+        size -= copy_size;
+        address += copy_size;
+        src += copy_size;
+        ++vma;
+    }
+    return true;
+}
+
 PAddr MemoryManager::PoolExpand(PAddr search_start, PAddr search_end, u64 size, u64 alignment) {
     std::scoped_lock lk{mutex};
     alignment = alignment > 0 ? alignment : 64_KB;
@@ -319,6 +364,7 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
     auto& new_vma = new_vma_handle->second;
     new_vma.disallow_merge = false;
     new_vma.prot = prot;
+    new_vma.max_prot = MemoryProt::CpuReadWrite | MemoryProt::CpuExec | MemoryProt::GpuReadWrite;
     new_vma.name = "anon";
     new_vma.type = Core::VMAType::Pooled;
     new_vma.is_exec = false;
@@ -501,6 +547,10 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
     const bool is_exec = True(prot & MemoryProt::CpuExec);
     new_vma.disallow_merge = True(flags & MemoryMapFlags::NoCoalesce);
     new_vma.prot = prot;
+    new_vma.max_prot = MemoryProt::CpuReadWrite | MemoryProt::GpuReadWrite;
+    if (type != VMAType::Direct) {
+        new_vma.max_prot |= MemoryProt::CpuExec;
+    }
     new_vma.name = name;
     new_vma.type = type;
     new_vma.phys_base = phys_addr == -1 ? 0 : phys_addr;
@@ -596,6 +646,11 @@ s32 MemoryManager::MapFile(void** out_addr, VAddr virtual_addr, u64 size, Memory
     auto& new_vma = CarveVMA(mapped_addr, size)->second;
     new_vma.disallow_merge = True(flags & MemoryMapFlags::NoCoalesce);
     new_vma.prot = prot;
+    new_vma.max_prot = MemoryProt::CpuRead | MemoryProt::GpuRead;
+    if (True(file->f.GetAccessMode() & Common::FS::FileAccessMode::Write) ||
+        True(file->f.GetAccessMode() & Common::FS::FileAccessMode::Append)) {
+        new_vma.max_prot |= MemoryProt::CpuWrite | MemoryProt::GpuWrite;
+    }
     new_vma.name = "File";
     new_vma.fd = fd;
     new_vma.type = VMAType::File;
@@ -650,6 +705,7 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
     auto& vma = new_it->second;
     vma.type = VMAType::PoolReserved;
     vma.prot = MemoryProt::NoAccess;
+    vma.max_prot = MemoryProt::NoAccess;
     vma.phys_base = 0;
     vma.disallow_merge = false;
     vma.name = "anon";
@@ -738,6 +794,7 @@ u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma
     auto& vma = new_it->second;
     vma.type = VMAType::Free;
     vma.prot = MemoryProt::NoAccess;
+    vma.max_prot = MemoryProt::NoAccess;
     vma.phys_base = 0;
     vma.disallow_merge = false;
     vma.name = "";
@@ -798,6 +855,10 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
                                 MemoryProt prot) {
     const auto start_in_vma = addr - vma_base.base;
     const auto adjusted_size = std::min<u64>(vma_base.size - start_in_vma, size);
+
+    if (True((prot & ~vma_base.max_prot) != MemoryProt::NoAccess)) {
+        return ORBIS_KERNEL_ERROR_EACCES;
+    }
 
     if (vma_base.type == VMAType::Free || vma_base.type == VMAType::PoolReserved) {
         // On PS4, protecting freed memory does nothing.
