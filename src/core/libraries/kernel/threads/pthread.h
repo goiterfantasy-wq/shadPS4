@@ -90,6 +90,7 @@ struct PthreadMutexAttr {
     PthreadMutexType m_type;
     PthreadMutexProt m_protocol;
     int m_ceiling;
+    int m_pshared;
 };
 using PthreadMutexAttrT = PthreadMutexAttr*;
 

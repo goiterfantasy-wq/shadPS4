@@ -257,6 +257,8 @@ void RegisterBarrier(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("6d-2sCnLqnI", "libkernel", 1, "libkernel", posix_pthread_barrier_destroy);
     LIB_FUNCTION("Ht+WPExb-Ks", "libScePosix", 1, "libkernel", posix_pthread_barrier_wait);
     LIB_FUNCTION("Ht+WPExb-Ks", "libkernel", 1, "libkernel", posix_pthread_barrier_wait);
+    LIB_FUNCTION("WwRRAkhjARM", "libScePosix", 1, "libkernel", posix_pthread_barrier_setname_np);
+    LIB_FUNCTION("WwRRAkhjARM", "libkernel", 1, "libkernel", posix_pthread_barrier_setname_np);
 
     // SCE functions
     LIB_FUNCTION("zhMHO2aQN-k", "libkernel", 1, "libkernel", scePthreadBarrierattrInit);

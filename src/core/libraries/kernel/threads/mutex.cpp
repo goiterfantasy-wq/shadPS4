@@ -32,10 +32,10 @@ static std::mutex MutxStaticLock;
     }
 
 static constexpr PthreadMutexAttr PthreadMutexattrDefault = {
-    .m_type = PthreadMutexType::ErrorCheck, .m_protocol = PthreadMutexProt::None, .m_ceiling = 0};
+    .m_type = PthreadMutexType::ErrorCheck, .m_protocol = PthreadMutexProt::None, .m_ceiling = 0, .m_pshared = 0};
 
 static constexpr PthreadMutexAttr PthreadMutexattrAdaptiveDefault = {
-    .m_type = PthreadMutexType::AdaptiveNp, .m_protocol = PthreadMutexProt::None, .m_ceiling = 0};
+    .m_type = PthreadMutexType::AdaptiveNp, .m_protocol = PthreadMutexProt::None, .m_ceiling = 0, .m_pshared = 0};
 
 using CallocFun = void* (*)(size_t, size_t);
 
@@ -422,6 +422,22 @@ int PS4_SYSV_ABI posix_pthread_mutexattr_setprotocol(PthreadMutexAttrT* mattr,
     return 0;
 }
 
+int PS4_SYSV_ABI posix_pthread_mutexattr_getpshared(const PthreadMutexAttrT* attr, int* pshared) {
+    if (attr == nullptr || *attr == nullptr) {
+        return POSIX_EINVAL;
+    }
+    *pshared = (*attr)->m_pshared;
+    return 0;
+}
+
+int PS4_SYSV_ABI posix_pthread_mutexattr_setpshared(PthreadMutexAttrT* attr, int pshared) {
+    if (attr == nullptr || *attr == nullptr) {
+        return POSIX_EINVAL;
+    }
+    (*attr)->m_pshared = pshared;
+    return 0;
+}
+
 void RegisterMutex(Core::Loader::SymbolsResolver* sym) {
     // Posix
     LIB_FUNCTION("ttHNfU+qDBU", "libScePosix", 1, "libkernel", posix_pthread_mutex_init);
@@ -431,7 +447,13 @@ void RegisterMutex(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("ltCfaGr2JGE", "libScePosix", 1, "libkernel", posix_pthread_mutex_destroy);
     LIB_FUNCTION("dQHWEsJtoE4", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_init);
     LIB_FUNCTION("mDmgMOGVUqg", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_settype);
+    LIB_FUNCTION("pDFTVKTISB0", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_gettype);
     LIB_FUNCTION("5txKfcMUAok", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_setprotocol);
+    LIB_FUNCTION("WNnIdH2Te2I", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_getprotocol);
+    LIB_FUNCTION("ZPRGITWT1kg", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_setkind_np);
+    LIB_FUNCTION("2MN28OAgCOk", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_getkind_np);
+    LIB_FUNCTION("VTRXEGCdgIM", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_getpshared);
+    LIB_FUNCTION("1QstYiKoiCA", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_setpshared);
     LIB_FUNCTION("HF7lK46xzjY", "libScePosix", 1, "libkernel", posix_pthread_mutexattr_destroy);
     LIB_FUNCTION("K-jXhbt2gn4", "libScePosix", 1, "libkernel", posix_pthread_mutex_trylock);
 
@@ -442,6 +464,12 @@ void RegisterMutex(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("ltCfaGr2JGE", "libkernel", 1, "libkernel", posix_pthread_mutex_destroy);
     LIB_FUNCTION("dQHWEsJtoE4", "libkernel", 1, "libkernel", posix_pthread_mutexattr_init);
     LIB_FUNCTION("mDmgMOGVUqg", "libkernel", 1, "libkernel", posix_pthread_mutexattr_settype);
+    LIB_FUNCTION("pDFTVKTISB0", "libkernel", 1, "libkernel", posix_pthread_mutexattr_gettype);
+    LIB_FUNCTION("WNnIdH2Te2I", "libkernel", 1, "libkernel", posix_pthread_mutexattr_getprotocol);
+    LIB_FUNCTION("ZPRGITWT1kg", "libkernel", 1, "libkernel", posix_pthread_mutexattr_setkind_np);
+    LIB_FUNCTION("2MN28OAgCOk", "libkernel", 1, "libkernel", posix_pthread_mutexattr_getkind_np);
+    LIB_FUNCTION("VTRXEGCdgIM", "libkernel", 1, "libkernel", posix_pthread_mutexattr_getpshared);
+    LIB_FUNCTION("1QstYiKoiCA", "libkernel", 1, "libkernel", posix_pthread_mutexattr_setpshared);
     LIB_FUNCTION("HF7lK46xzjY", "libkernel", 1, "libkernel", posix_pthread_mutexattr_destroy);
     LIB_FUNCTION("K-jXhbt2gn4", "libkernel", 1, "libkernel", posix_pthread_mutex_trylock);
 

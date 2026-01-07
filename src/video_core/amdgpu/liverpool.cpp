@@ -449,7 +449,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
-                LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
+                LOG_TRACE(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
             case PM4ItOpcode::DrawPreamble: {
@@ -857,12 +857,26 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::StrmoutBufferUpdate: {
                 const auto* strmout = reinterpret_cast<const PM4CmdStrmoutBufferUpdate*>(header);
-                LOG_WARNING(Render_Vulkan,
-                            "Unimplemented IT_STRMOUT_BUFFER_UPDATE, update_memory = {}, "
-                            "source_select = {}, buffer_select = {}",
-                            strmout->update_memory.Value(),
-                            magic_enum::enum_name(strmout->source_select.Value()),
-                            strmout->buffer_select.Value());
+                if (strmout->update_memory.Value()) {
+                    auto* memory = Core::Memory::Instance();
+                    u64 dst_addr = strmout->DstAddress();
+                    u32 value = 0;
+                    if (strmout->source_select.Value() == SourceSelect::BufferOffset) {
+                        value = strmout->buffer_offset;
+                    } else if (strmout->source_select.Value() == SourceSelect::SrcAddress) {
+                        const u64 src_addr = strmout->SrcAddress();
+                        memory->Read(src_addr, &value, sizeof(u32));
+                    } else if (strmout->source_select.Value() ==
+                               SourceSelect::VgtStrmoutBufferFilledSize) {
+                        // TODO: Implement VGT_STRMOUT_BUFFER_FILLED_SIZE
+                        value = 0;
+                    } else {
+                        LOG_WARNING(Render_Vulkan,
+                                    "Unimplemented StrmoutBufferUpdate source_select {}",
+                                    magic_enum::enum_name(strmout->source_select.Value()));
+                    }
+                    memory->Write(dst_addr, &value, sizeof(u32));
+                }
                 break;
             }
             case PM4ItOpcode::GetLodStats: {
@@ -882,8 +896,16 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::WaitRegMem64: {
-                // Similar to WaitRegMem but with 64-bit address
-                LOG_WARNING(Render_Vulkan, "Unimplemented IT_WAIT_REG_MEM64");
+                const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
+                const u64* wait_addr = wait_reg_mem->Address<u64*>();
+                if (vo_port->IsVoLabel(wait_addr) &&
+                    num_submits == mapped_queues[GfxQueueId].submits.size()) {
+                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
+                    break;
+                }
+                while (!wait_reg_mem->Test(regs.reg_array)) {
+                    YIELD_GFX();
+                }
                 break;
             }
             case PM4ItOpcode::DrawIndexMultiInst: {
@@ -906,11 +928,50 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::CopyDw: {
                 const auto* copy_dw = reinterpret_cast<const PM4CmdCopyDw*>(header);
-                LOG_WARNING(Render_Vulkan, "Unimplemented IT_COPY_DW");
+                auto* memory = Core::Memory::Instance();
+                u32 value = 0;
+
+                // Source
+                if (copy_dw->src_sel == 0) { // Register
+                    value = regs.reg_array[copy_dw->src_reg.Value()];
+                } else if (copy_dw->src_sel == 1) { // Memory
+                    const u64 src_addr =
+                        copy_dw->src_addr_lo | (u64(copy_dw->src_addr_hi) << 32);
+                    memory->Read(src_addr, &value, sizeof(u32));
+                }
+
+                // Destination
+                if (copy_dw->dst_sel == 0) { // Register
+                    regs.reg_array[copy_dw->dst_addr_lo] = value;
+                } else if (copy_dw->dst_sel == 1) { // Memory
+                    const u64 dst_addr =
+                        copy_dw->dst_addr_lo | (u64(copy_dw->dst_addr_hi) << 32);
+                    memory->Write(dst_addr, &value, sizeof(u32));
+                } else {
+                    LOG_WARNING(Render_Vulkan, "Unimplemented IT_COPY_DW dst_sel={}",
+                                copy_dw->dst_sel.Value());
+                }
                 break;
             }
             case PM4ItOpcode::DrawIndirectCountMulti: {
-                LOG_WARNING(Render_Vulkan, "Unimplemented IT_DRAW_INDIRECT_COUNT_MULTI");
+                const auto* draw_indirect_count =
+                    reinterpret_cast<const PM4CmdDrawIndexIndirectCountMulti*>(header);
+                const auto offset = draw_indirect_count->data_offset;
+                if (DebugState.DumpingCurrentReg()) {
+                    DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
+                }
+                if (rasterizer) {
+                    const auto cmd_address = reinterpret_cast<const void*>(header);
+                    rasterizer->ScopeMarkerBegin(
+                        fmt::format("gfx:{}:DrawIndirectCountMulti", cmd_address));
+                    rasterizer->DrawIndirect(
+                        true, indirect_args_addr, offset, draw_indirect_count->stride,
+                        draw_indirect_count->count,
+                        draw_indirect_count->count_indirect_enable.Value()
+                            ? draw_indirect_count->count_addr
+                            : 0);
+                    rasterizer->ScopeMarkerEnd();
+                }
                 break;
             }
             case PM4ItOpcode::CondExec: {

@@ -341,6 +341,9 @@ void RegisterCond(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("mKoTx03HRWA", "libScePosix", 1, "libkernel", posix_pthread_condattr_init);
     LIB_FUNCTION("dJcuQVn6-Iw", "libScePosix", 1, "libkernel", posix_pthread_condattr_destroy);
     LIB_FUNCTION("EjllaAqAPZo", "libScePosix", 1, "libkernel", posix_pthread_condattr_setclock);
+    LIB_FUNCTION("cTDYxTUNPhM", "libScePosix", 1, "libkernel", posix_pthread_condattr_getclock);
+    LIB_FUNCTION("h0qUqSuOmC8", "libScePosix", 1, "libkernel", posix_pthread_condattr_getpshared);
+    LIB_FUNCTION("3BpP850hBT4", "libScePosix", 1, "libkernel", posix_pthread_condattr_setpshared);
     LIB_FUNCTION("0TyVk4MSLt0", "libScePosix", 1, "libkernel", posix_pthread_cond_init);
     LIB_FUNCTION("2MOy+rUfuhQ", "libScePosix", 1, "libkernel", posix_pthread_cond_signal);
     LIB_FUNCTION("RXXqi4CtF8w", "libScePosix", 1, "libkernel", posix_pthread_cond_destroy);
@@ -351,6 +354,9 @@ void RegisterCond(Core::Loader::SymbolsResolver* sym) {
     // Posix-Kernel
     LIB_FUNCTION("0TyVk4MSLt0", "libkernel", 1, "libkernel", posix_pthread_cond_init);
     LIB_FUNCTION("EjllaAqAPZo", "libkernel", 1, "libkernel", posix_pthread_condattr_setclock);
+    LIB_FUNCTION("cTDYxTUNPhM", "libkernel", 1, "libkernel", posix_pthread_condattr_getclock);
+    LIB_FUNCTION("h0qUqSuOmC8", "libkernel", 1, "libkernel", posix_pthread_condattr_getpshared);
+    LIB_FUNCTION("3BpP850hBT4", "libkernel", 1, "libkernel", posix_pthread_condattr_setpshared);
     LIB_FUNCTION("Op8TBGY5KHg", "libkernel", 1, "libkernel", posix_pthread_cond_wait);
     LIB_FUNCTION("mkx2fVhNMsg", "libkernel", 1, "libkernel", posix_pthread_cond_broadcast);
     LIB_FUNCTION("2MOy+rUfuhQ", "libkernel", 1, "libkernel", posix_pthread_cond_signal);
