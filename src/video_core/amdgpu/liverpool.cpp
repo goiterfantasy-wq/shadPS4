@@ -175,6 +175,12 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
                    write_const->Size());
             break;
         }
+        case PM4ItOpcode::LoadConstRam: {
+            const auto* load_const = reinterpret_cast<const PM4LoadConstRam*>(header);
+            memcpy(cblock.constants_heap.data() + load_const->Offset(), load_const->Address<void*>(),
+                   load_const->Size());
+            break;
+        }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
             memcpy(dump_const->Address<void*>(),
@@ -698,13 +704,29 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::CopyData: {
-                const auto* copy_data = reinterpret_cast<const PM4CmdCopyData*>(header);
-                LOG_WARNING(Render,
-                            "unhandled IT_COPY_DATA src_sel = {}, dst_sel = {}, "
-                            "count_sel = {}, wr_confirm = {}, engine_sel = {}",
-                            u32(copy_data->src_sel.Value()), u32(copy_data->dst_sel.Value()),
-                            copy_data->count_sel.Value(), copy_data->wr_confirm.Value(),
-                            u32(copy_data->engine_sel.Value()));
+                const auto* copy = reinterpret_cast<const PM4CmdCopyData*>(header);
+                const u32 num_bytes = copy->count_sel.Value() ? sizeof(u64) : sizeof(u32);
+                if (copy->dst_sel == CopyDataDst::MemorySync || copy->dst_sel == CopyDataDst::MemoryAsync) {
+                    auto* memory = Core::Memory::Instance();
+                    u64 dst = copy->DstAddress<u64>();
+                    if (copy->src_sel == CopyDataSrc::Immediate) {
+                        const u64 data64 = (static_cast<u64>(copy->src_addr_hi) << 32) | copy->src_addr_lo;
+                        const void* src = &data64;
+                        if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst), src, num_bytes)) {
+                            std::memcpy(reinterpret_cast<void*>(dst), src, num_bytes);
+                        }
+                    } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
+                        const u64 src = copy->SrcAddress<u64>();
+                        if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
+                                                    reinterpret_cast<const void*>(src), num_bytes)) {
+                            std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
+                        }
+                    } else {
+                        LOG_WARNING(Render, "IT_COPY_DATA unsupported src_sel {}", u32(copy->src_sel.Value()));
+                    }
+                } else {
+                    LOG_WARNING(Render, "IT_COPY_DATA unsupported dst_sel {}", u32(copy->dst_sel.Value()));
+                }
                 break;
             }
             case PM4ItOpcode::MemSemaphore: {
@@ -720,7 +742,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::AcquireMem: {
-                // const auto* acquire_mem = reinterpret_cast<PM4CmdAcquireMem*>(header);
+                const auto* acquire_mem = reinterpret_cast<const PM4CmdAcquireMem*>(header);
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x79] = acquire_mem->cp_coher_base_hi;
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x7C] = acquire_mem->cp_coher_cntl;
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x7D] = acquire_mem->cp_coher_size_lo;
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x7E] = acquire_mem->cp_coher_base_lo;
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x8C] = acquire_mem->cp_coher_size_hi;
                 break;
             }
             case PM4ItOpcode::Rewind: {
@@ -928,6 +955,12 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::AcquireMem: {
+            const auto* acquire_mem = reinterpret_cast<const PM4CmdAcquireMem*>(header);
+            regs.reg_array[Regs::UconfigRegWordOffset + 0x79] = acquire_mem->cp_coher_base_hi;
+            regs.reg_array[Regs::UconfigRegWordOffset + 0x7C] = acquire_mem->cp_coher_cntl;
+            regs.reg_array[Regs::UconfigRegWordOffset + 0x7D] = acquire_mem->cp_coher_size_lo;
+            regs.reg_array[Regs::UconfigRegWordOffset + 0x7E] = acquire_mem->cp_coher_base_lo;
+            regs.reg_array[Regs::UconfigRegWordOffset + 0x8C] = acquire_mem->cp_coher_size_hi;
             break;
         }
         case PM4ItOpcode::Rewind: {
@@ -1009,6 +1042,32 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
             } else {
                 UNREACHABLE();
+            }
+            break;
+        }
+        case PM4ItOpcode::CopyData: {
+            const auto* copy = reinterpret_cast<const PM4CmdCopyData*>(header);
+            const u32 num_bytes = copy->count_sel.Value() ? sizeof(u64) : sizeof(u32);
+            if (copy->dst_sel == CopyDataDst::MemorySync || copy->dst_sel == CopyDataDst::MemoryAsync) {
+                auto* memory = Core::Memory::Instance();
+                u64 dst = copy->DstAddress<u64>();
+                if (copy->src_sel == CopyDataSrc::Immediate) {
+                    const u64 data64 = (static_cast<u64>(copy->src_addr_hi) << 32) | copy->src_addr_lo;
+                    const void* src = &data64;
+                    if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst), src, num_bytes)) {
+                        std::memcpy(reinterpret_cast<void*>(dst), src, num_bytes);
+                    }
+                } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
+                    const u64 src = copy->SrcAddress<u64>();
+                    if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
+                                                reinterpret_cast<const void*>(src), num_bytes)) {
+                        std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
+                    }
+                } else {
+                    LOG_WARNING(Render, "IT_COPY_DATA unsupported src_sel {}", u32(copy->src_sel.Value()));
+                }
+            } else {
+                LOG_WARNING(Render, "IT_COPY_DATA unsupported dst_sel {}", u32(copy->dst_sel.Value()));
             }
             break;
         }
