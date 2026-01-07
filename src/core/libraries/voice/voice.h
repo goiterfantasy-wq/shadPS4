@@ -13,6 +13,26 @@ namespace Libraries::Voice {
 
 constexpr s32 SCE_VOICE_ERROR_ARGUMENT_INVALID = -2142369787; // 0x804e0805
 
+// SceVoicePortType
+constexpr s32 SCE_VOICE_PORTTYPE_NULL = -1;
+constexpr s32 SCE_VOICE_PORTTYPE_IN_DEVICE = 0;
+constexpr s32 SCE_VOICE_PORTTYPE_IN_PCMAUDIO = 1;
+constexpr s32 SCE_VOICE_PORTTYPE_IN_VOICE = 2;
+constexpr s32 SCE_VOICE_PORTTYPE_OUT_PCMAUDIO = 3;
+constexpr s32 SCE_VOICE_PORTTYPE_OUT_VOICE = 4;
+constexpr s32 SCE_VOICE_PORTTYPE_OUT_DEVICE = 5;
+
+// SceVoiceQoSAttributeId
+constexpr s32 SCE_VOICE_QOS_ATTR_MIC_VOLUME = 0;
+constexpr s32 SCE_VOICE_QOS_ATTR_MIC_MUTE = 1;
+constexpr s32 SCE_VOICE_QOS_ATTR_SPEAKER_VOLUME = 0;
+constexpr s32 SCE_VOICE_QOS_ATTR_SPEAKER_MUTE = 1;
+constexpr s32 SCE_VOICE_QOS_ATTR_DESIRED_OUT_BIT_RATE = 3851;
+constexpr s32 SCE_VOICE_QOS_ATTR_MIC_USABLE = 0;
+constexpr s32 SCE_VOICE_QOS_ATTR_SILENT_STATE = 6;
+constexpr s32 SCE_VOICE_QOS_ATTR_REMOTE_MUTE = 1;
+constexpr s32 SCE_VOICE_QOS_ATTR_SPEAKER_DESTINATION = 0;
+
 struct OrbisVoiceInitParam {
     s32 app_type;
     s32 align;
@@ -78,6 +98,9 @@ s32 PS4_SYSV_ABI sceVoiceUpdatePort();
 s32 PS4_SYSV_ABI sceVoiceVADAdjustment();
 s32 PS4_SYSV_ABI sceVoiceVADSetVersion();
 s32 PS4_SYSV_ABI sceVoiceWriteToIPort();
+s32 PS4_SYSV_ABI sceVoiceQoSInit(void* mem_block, u32 mem_size, s32 app_type);
+s32 PS4_SYSV_ABI sceVoiceQoSCreateLocalEndpoint(s32* local_id, s32 user_id, s32 device_in_id, s32 device_out_id);
+s32 PS4_SYSV_ABI sceVoiceQoSGetLocalEndpointAttribute(s32 local_id, s32 attribute_id, void* attribute_value, s32 attribute_size);
 
 void RegisterLib(Core::Loader::SymbolsResolver* sym);
 } // namespace Libraries::Voice

@@ -308,12 +308,6 @@ Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
     return ctx.OpBitcast(ctx.F32[1], res);
 }
 
-static std::pair<Id, Id> AtomicArgs(EmitContext& ctx) {
-    const Id scope{ctx.ConstU32(static_cast<u32>(spv::Scope::Device))};
-    const Id semantics{ctx.u32_zero_value};
-    return {scope, semantics};
-}
-
 Id EmitImageAtomicInc32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id pointer{ctx.OpImageTexelPointer(ctx.image_u32, texture.id, coords, ctx.ConstU32(0U))};
