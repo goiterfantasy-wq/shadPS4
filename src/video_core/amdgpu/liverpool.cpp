@@ -968,7 +968,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         true, indirect_args_addr, offset, draw_indirect_count->stride,
                         draw_indirect_count->count,
                         draw_indirect_count->count_indirect_enable.Value()
-                            ? draw_indirect_count->count_addr
+                            ? (draw_indirect_count->count_addr & ~3ULL)
                             : 0);
                     rasterizer->ScopeMarkerEnd();
                 }
