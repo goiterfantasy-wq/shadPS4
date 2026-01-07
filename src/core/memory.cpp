@@ -856,7 +856,7 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     const auto start_in_vma = addr - vma_base.base;
     const auto adjusted_size = std::min<u64>(vma_base.size - start_in_vma, size);
 
-    if (True((prot & ~vma_base.max_prot) != MemoryProt::NoAccess)) {
+    if ((prot & ~vma_base.max_prot) != MemoryProt::NoAccess) {
         return ORBIS_KERNEL_ERROR_EACCES;
     }
 

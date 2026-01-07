@@ -8,22 +8,22 @@
 
 namespace Libraries::Voice {
 
-s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort() {
+s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort(u32 input_port, u32 output_port) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceCreatePort() {
+s32 PS4_SYSV_ABI sceVoiceCreatePort(u32 port_id, const OrbisVoicePortParam* param) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceDeletePort() {
+s32 PS4_SYSV_ABI sceVoiceDeletePort(u32 port_id) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceDisconnectIPortFromOPort() {
+s32 PS4_SYSV_ABI sceVoiceDisconnectIPortFromOPort(u32 input_port, u32 output_port) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
@@ -50,9 +50,14 @@ s32 PS4_SYSV_ABI sceVoiceGetPortAttr() {
 }
 
 s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
-    LOG_ERROR(Lib_Voice, "(STUBBED) called");
+    LOG_ERROR(Lib_Voice, "called port_id={}", port_id);
+
+    if (!info) {
+        return SCE_VOICE_ERROR_ARGUMENT_INVALID;
+    }
+
     info->port_type = 0;
-    info->state = 0;
+    info->state = 3;
     info->byte_count = 0;
     info->frame_size = 1;
     info->edge_count = 0;
@@ -61,8 +66,18 @@ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceGetResourceInfo() {
-    LOG_ERROR(Lib_Voice, "(STUBBED) called");
+s32 PS4_SYSV_ABI sceVoiceGetResourceInfo(OrbisVoiceResourceInfo* info) {
+    LOG_ERROR(Lib_Voice, "called");
+
+    if (!info) {
+        return SCE_VOICE_ERROR_ARGUMENT_INVALID;
+    }
+
+    info->max_in_voice_port = 2;
+    info->max_out_voice_port = 4;
+    info->max_in_device_port = 0;
+    info->max_out_device_port = 5;
+
     return ORBIS_OK;
 }
 
@@ -71,7 +86,7 @@ s32 PS4_SYSV_ABI sceVoiceGetVolume() {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceInit() {
+s32 PS4_SYSV_ABI sceVoiceInit(OrbisVoiceInitParam* param, u32 version) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
@@ -91,7 +106,7 @@ s32 PS4_SYSV_ABI sceVoicePausePortAll() {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceReadFromOPort() {
+s32 PS4_SYSV_ABI sceVoiceReadFromOPort(u32 output_port, void* data, u32* size) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
@@ -116,7 +131,7 @@ s32 PS4_SYSV_ABI sceVoiceSetBitRate() {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceSetMuteFlag() {
+s32 PS4_SYSV_ABI sceVoiceSetMuteFlag(u32 port_id, bool muted) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
@@ -131,12 +146,12 @@ s32 PS4_SYSV_ABI sceVoiceSetThreadsParams() {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceSetVolume() {
+s32 PS4_SYSV_ABI sceVoiceSetVolume(u32 port_id, float volume) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVoiceStart() {
+s32 PS4_SYSV_ABI sceVoiceStart(OrbisVoiceStartParam* param) {
     LOG_ERROR(Lib_Voice, "(STUBBED) called");
     return ORBIS_OK;
 }

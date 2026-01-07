@@ -261,15 +261,6 @@ constexpr CompMapping RemapSwizzle(const DataFormat format, const CompMapping sw
         result.a = swizzle.r;
         return result;
     }
-    case DataFormat::Format4_4_4_4: {
-        // Remap to a more supported component order.
-        CompMapping result;
-        result.r = swizzle.g;
-        result.g = swizzle.b;
-        result.b = swizzle.a;
-        result.a = swizzle.r;
-        return result;
-    }
     case DataFormat::Format5_6_5: {
         // Remap to a more supported component order.
         CompMapping result;

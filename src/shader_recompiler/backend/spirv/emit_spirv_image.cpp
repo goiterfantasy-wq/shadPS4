@@ -263,10 +263,23 @@ Id EmitCubeFaceIndex(EmitContext& ctx, IR::Inst* inst, Id cube_coords) {
     }
 }
 
+static std::pair<Id, Id> AtomicArgs(EmitContext& ctx) {
+    const Id scope{ctx.ConstU32(static_cast<u32>(spv::Scope::Device))};
+    const Id semantics{ctx.u32_zero_value};
+    return {scope, semantics};
+}
+
+static Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
+                         Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id)) {
+    const auto& texture = ctx.images[handle & 0xFFFF];
+    const Id pointer{ctx.OpImageTexelPointer(ctx.image_f32, texture.id, coords, ctx.ConstU32(0U))};
+    const auto [scope, semantics] = AtomicArgs(ctx);
+    return (ctx.*atomic_func)(ctx.F32[1], pointer, scope, semantics, value);
+}
+
 Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
     if (ctx.profile.supports_image_fp32_atomic_min_max) {
-        // TODO: Implement native support if available
-        // return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
+        return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
     }
 
     const auto& texture = ctx.images[handle & 0xFFFF];
@@ -339,10 +352,10 @@ Id EmitImageAtomicDec32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
     ctx.AddLabel(loop_label);
 
     const Id current = ctx.OpAtomicLoad(ctx.U32[1], pointer, scope, semantics);
-    const Id cond0 = ctx.OpIEqual(ctx.U1[1], current, ctx.ConstU32(0));
+    const Id cond0 = ctx.OpIEqual(ctx.U1[1], current, ctx.ConstU32(0u));
     const Id cond1 = ctx.OpUGreaterThan(ctx.U1[1], current, value);
     const Id reset = ctx.OpLogicalOr(ctx.U1[1], cond0, cond1);
-    const Id minus_one = ctx.OpISub(ctx.U32[1], current, ctx.ConstU32(1));
+    const Id minus_one = ctx.OpISub(ctx.U32[1], current, ctx.ConstU32(1u));
     const Id target = ctx.OpSelect(ctx.U32[1], reset, value, minus_one);
 
     const Id res =
