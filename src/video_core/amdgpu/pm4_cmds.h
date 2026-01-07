@@ -321,6 +321,52 @@ struct PM4CmdDrawIndexAuto {
     u32 draw_initiator;
 };
 
+struct PM4CmdDrawPreamble {
+    PM4Type3Header header;
+    u32 vgt_primitive_type;  ///< Written to VGT_PRIMITIVE_TYPE register
+    u32 ia_multi_vgt_param;  ///< Written to IA_MULTI_VGT_PARAM register
+    u32 vgt_ls_hs_config;    ///< Written to VGT_LS_HS_CONFIG register
+};
+
+struct PM4CmdDrawIndexMultiInst {
+    PM4Type3Header header;
+    u32 index_count;
+    u32 draw_initiator;
+    u32 num_instances;
+    u32 index_offset;
+};
+
+struct PM4CmdCopyDw {
+    PM4Type3Header header;
+    union {
+        u32 raw;
+        BitField<0, 2, u32> src_sel;  ///< Source select
+        BitField<8, 2, u32> dst_sel;  ///< Destination select
+        BitField<20, 8, u32> src_reg; ///< Source register offset (when src_sel = 0)
+    };
+    u32 src_addr_lo;
+    u32 src_addr_hi;
+    u32 dst_addr_lo;
+    u32 dst_addr_hi;
+};
+
+struct PM4CmdFrameControl {
+    PM4Type3Header header;
+    union {
+        u32 raw;
+        BitField<0, 4, u32> tmz_enable; ///< TMZ enable
+        BitField<28, 4, u32> command;   ///< Frame control command
+    };
+};
+
+struct PM4CmdIndexAttributesIndirect {
+    PM4Type3Header header;
+    u32 attribute_base_lo;
+    u32 attribute_base_hi;
+    u32 attribute_index;
+    u32 index_type;
+};
+
 enum class DataSelect : u32 {
     None = 0,
     Data32Low = 1,
