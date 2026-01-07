@@ -247,6 +247,10 @@ public:
 
     bool TryWriteBacking(void* address, const void* data, u32 num_bytes);
 
+    bool TryCopyBacking(void* address, const void* data, u32 num_bytes) {
+        return TryWriteBacking(address, data, num_bytes);
+    }
+
     void SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1, bool use_extended_mem2);
 
     PAddr PoolExpand(PAddr search_start, PAddr search_end, u64 size, u64 alignment);

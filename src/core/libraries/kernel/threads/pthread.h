@@ -184,12 +184,14 @@ static constexpr u32 ThrGuardDefault = ThrPageSize;
 
 struct PthreadRwlockAttr {
     int pshared;
+    int type;
 };
 using PthreadRwlockAttrT = PthreadRwlockAttr*;
 
 struct PthreadRwlock {
     std::shared_timed_mutex lock;
     Pthread* owner;
+    std::string name;
 
     int Wrlock(const OrbisKernelTimespec* abstime);
     int Rdlock(const OrbisKernelTimespec* abstime);

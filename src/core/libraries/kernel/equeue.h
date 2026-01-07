@@ -183,6 +183,8 @@ private:
 };
 
 u64 PS4_SYSV_ABI sceKernelGetEventData(const SceKernelEvent* ev);
+u32 PS4_SYSV_ABI sceKernelGetEventError(const SceKernelEvent* ev);
+u32 PS4_SYSV_ABI sceKernelGetEventFflags(const SceKernelEvent* ev);
 
 void RegisterEventQueue(Core::Loader::SymbolsResolver* sym);
 

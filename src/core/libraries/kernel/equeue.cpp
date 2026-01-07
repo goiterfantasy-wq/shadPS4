@@ -487,6 +487,18 @@ u64 PS4_SYSV_ABI sceKernelGetEventData(const SceKernelEvent* ev) {
     return ev->data;
 }
 
+u32 PS4_SYSV_ABI sceKernelGetEventError(const SceKernelEvent* ev) {
+    u32 result = ev->fflags;
+    if (result != 0) {
+        result += 0x80020000;
+    }
+    return result;
+}
+
+u32 PS4_SYSV_ABI sceKernelGetEventFflags(const SceKernelEvent* ev) {
+    return ev->fflags;
+}
+
 void RegisterEventQueue(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("D0OdFMjp46I", "libkernel", 1, "libkernel", sceKernelCreateEqueue);
     LIB_FUNCTION("jpFjmgAC5AE", "libkernel", 1, "libkernel", sceKernelDeleteEqueue);
@@ -503,6 +515,8 @@ void RegisterEventQueue(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("mJ7aghmgvfc", "libkernel", 1, "libkernel", sceKernelGetEventId);
     LIB_FUNCTION("23CPPI1tyBY", "libkernel", 1, "libkernel", sceKernelGetEventFilter);
     LIB_FUNCTION("kwGyyjohI50", "libkernel", 1, "libkernel", sceKernelGetEventData);
+    LIB_FUNCTION("Uu-iDFC9aUc", "libkernel", 1, "libkernel", sceKernelGetEventError);
+    LIB_FUNCTION("Q0qr9AyqJSk", "libkernel", 1, "libkernel", sceKernelGetEventFflags);
 }
 
 } // namespace Libraries::Kernel

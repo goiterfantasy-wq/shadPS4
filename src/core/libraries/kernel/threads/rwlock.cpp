@@ -10,6 +10,9 @@ namespace Libraries::Kernel {
 
 static std::mutex RwlockStaticLock;
 
+static constexpr int SCE_PTHREAD_RWLOCK_NORMAL = 1;
+static constexpr int SCE_PTHREAD_RWLOCK_PREFER_READER = 2;
+
 #define THR_RWLOCK_INITIALIZER ((PthreadRwlock*)NULL)
 #define THR_RWLOCK_DESTROYED ((PthreadRwlock*)1)
 
@@ -26,10 +29,13 @@ static std::mutex RwlockStaticLock;
         prwlock = *rwlock;                                                                         \
     }
 
-static int RwlockInit(PthreadRwlockT* rwlock, const PthreadRwlockAttrT* attr) {
+static int RwlockInit(PthreadRwlockT* rwlock, const PthreadRwlockAttrT* attr, const char* name = nullptr) {
     auto* prwlock = new (std::nothrow) PthreadRwlock{};
     if (prwlock == nullptr) {
         return POSIX_ENOMEM;
+    }
+    if (name) {
+        prwlock->name = name;
     }
     *rwlock = prwlock;
     return 0;
@@ -59,6 +65,11 @@ static int InitStatic(Pthread* thread, PthreadRwlockT* rwlock) {
 int PS4_SYSV_ABI posix_pthread_rwlock_init(PthreadRwlockT* rwlock, const PthreadRwlockAttrT* attr) {
     *rwlock = nullptr;
     return RwlockInit(rwlock, attr);
+}
+
+int PS4_SYSV_ABI sce_pthread_rwlock_init(PthreadRwlockT* rwlock, const PthreadRwlockAttrT* attr, const char* name) {
+    *rwlock = nullptr;
+    return RwlockInit(rwlock, attr, name);
 }
 
 int PthreadRwlock::Rdlock(const OrbisKernelTimespec* abstime) {
@@ -219,6 +230,7 @@ int PS4_SYSV_ABI posix_pthread_rwlockattr_init(PthreadRwlockAttrT* rwlockattr) {
     }
 
     prwlockattr->pshared = 0;
+    prwlockattr->type = SCE_PTHREAD_RWLOCK_NORMAL;
     *rwlockattr = prwlockattr;
     return 0;
 }
@@ -230,6 +242,25 @@ int PS4_SYSV_ABI posix_pthread_rwlockattr_setpshared(PthreadRwlockAttrT* rwlocka
     }
 
     (*rwlockattr)->pshared = pshared;
+    return 0;
+}
+
+int PS4_SYSV_ABI sce_pthread_rwlockattr_gettype(const PthreadRwlockAttrT* attr, int* type) {
+    if (attr == nullptr || *attr == nullptr || type == nullptr) {
+        return POSIX_EINVAL;
+    }
+    *type = (*attr)->type;
+    return 0;
+}
+
+int PS4_SYSV_ABI sce_pthread_rwlockattr_settype(PthreadRwlockAttrT* attr, int type) {
+    if (attr == nullptr || *attr == nullptr) {
+        return POSIX_EINVAL;
+    }
+    if (type != SCE_PTHREAD_RWLOCK_NORMAL && type != SCE_PTHREAD_RWLOCK_PREFER_READER) {
+        return POSIX_EINVAL;
+    }
+    (*attr)->type = type;
     return 0;
 }
 
@@ -273,7 +304,7 @@ void RegisterRwlock(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("-ZvQH18j10c", "libkernel", 1, "libkernel",
                  ORBIS(posix_pthread_rwlockattr_setpshared));
     LIB_FUNCTION("BB+kb08Tl9A", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_destroy));
-    LIB_FUNCTION("6ULAa0fq4jA", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_init));
+    LIB_FUNCTION("6ULAa0fq4jA", "libkernel", 1, "libkernel", sce_pthread_rwlock_init);
     LIB_FUNCTION("Ox9i0c7L5w0", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_rdlock));
     LIB_FUNCTION("iPtZRWICjrM", "libkernel", 1, "libkernel",
                  ORBIS(posix_pthread_rwlock_timedrdlock));
@@ -283,6 +314,8 @@ void RegisterRwlock(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("bIHoZCTomsI", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_trywrlock));
     LIB_FUNCTION("+L98PIbGttk", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_unlock));
     LIB_FUNCTION("mqdNorrB+gI", "libkernel", 1, "libkernel", ORBIS(posix_pthread_rwlock_wrlock));
+    LIB_FUNCTION("Kyls1ChFyrc", "libkernel", 1, "libkernel", sce_pthread_rwlockattr_gettype);
+    LIB_FUNCTION("h/OifiouBd8", "libkernel", 1, "libkernel", sce_pthread_rwlockattr_settype);
 }
 
 } // namespace Libraries::Kernel
