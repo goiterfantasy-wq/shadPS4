@@ -233,6 +233,27 @@ s32 PS4_SYSV_ABI exit(s32 status) {
     return 0;
 }
 
+s32 PS4_SYSV_ABI sceKernelGetCpuTemperature(u32* temp) {
+    LOG_DEBUG(Lib_Kernel, "called");
+    if (temp == nullptr) {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
+    // Return a reasonable temperature (in Celsius * 256)
+    // 50°C = 50 * 256 = 12800
+    *temp = 50 * 256;
+    return ORBIS_OK;
+}
+
+s32 PS4_SYSV_ABI sceKernelGetSocSensorTemperature(u32 sensor_id, u32* temp) {
+    LOG_DEBUG(Lib_Kernel, "called sensor_id={}", sensor_id);
+    if (temp == nullptr) {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
+    // Return a reasonable temperature (in Celsius * 256)
+    *temp = 50 * 256;
+    return ORBIS_OK;
+}
+
 void RegisterProcess(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("xeu-pV8wkKs", "libkernel", 1, "libkernel", sceKernelIsInSandbox);
     LIB_FUNCTION("WB66evu8bsU", "libkernel", 1, "libkernel", sceKernelGetCompiledSdkVersion);
@@ -250,6 +271,8 @@ void RegisterProcess(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("HZO7xOos4xc", "libkernel", 1, "libkernel", sceKernelGetModuleInfoInternal);
     LIB_FUNCTION("IuxnUuXk6Bg", "libkernel", 1, "libkernel", sceKernelGetModuleList);
     LIB_FUNCTION("6Z83sYWFlA8", "libkernel", 1, "libkernel", exit);
+    LIB_FUNCTION("kpJLgS4gL2s", "libkernel", 1, "libkernel", sceKernelGetCpuTemperature);
+    LIB_FUNCTION("qIuPAUHlC2Y", "libkernel", 1, "libkernel", sceKernelGetSocSensorTemperature);
 }
 
 } // namespace Libraries::Kernel

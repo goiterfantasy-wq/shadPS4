@@ -305,6 +305,7 @@ void RegisterLib(Core::Loader::SymbolsResolver* sym) {
     Libraries::Kernel::RegisterTime(sym);
     Libraries::Kernel::RegisterThreads(sym);
     Libraries::Kernel::RegisterKernelEventFlag(sym);
+    Libraries::Kernel::RegisterBarrier(sym);
     Libraries::Kernel::RegisterMemory(sym);
     Libraries::Kernel::RegisterEventQueue(sym);
     Libraries::Kernel::RegisterProcess(sym);
