@@ -250,7 +250,82 @@ s32 PS4_SYSV_ABI sceKernelGetSocSensorTemperature(u32 sensor_id, u32* temp) {
         return ORBIS_KERNEL_ERROR_EINVAL;
     }
     // Return a reasonable temperature (in Celsius * 256)
+    // 50°C = 50 * 256 = 12800
     *temp = 50 * 256;
+    return ORBIS_OK;
+}
+
+s32 PS4_SYSV_ABI sceKernelGetrlimit(s32 resource, OrbisKernelRlimit* rlp) {
+    if (!rlp) {
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
+
+    constexpr u64 ORBIS_RLIM_INFINITY = 0x7fffffffffffffff;
+    // Standard BSD/PS4 limits
+    constexpr u64 LIMIT_STACK = 512 * 1024 * 1024; // 512MB
+    constexpr u64 LIMIT_NOFILE = 16384;            // Max open files
+    constexpr u64 LIMIT_NPROC = 2000;              // Max processes
+
+    u64 current = ORBIS_RLIM_INFINITY;
+    u64 max = ORBIS_RLIM_INFINITY;
+
+    switch (resource) {
+    case 0: // RLIMIT_CPU
+        break;
+    case 1: // RLIMIT_FSIZE
+        break;
+    case 2: // RLIMIT_DATA
+        break;
+    case 3: // RLIMIT_STACK
+        current = LIMIT_STACK;
+        max = LIMIT_STACK;
+        break;
+    case 4: // RLIMIT_CORE
+        break;
+    case 5: // RLIMIT_RSS
+        break;
+    case 6: // RLIMIT_MEMLOCK
+        break;
+    case 7: // RLIMIT_NPROC
+        current = LIMIT_NPROC;
+        max = LIMIT_NPROC;
+        break;
+    case 8: // RLIMIT_NOFILE
+        current = LIMIT_NOFILE;
+        max = LIMIT_NOFILE;
+        break;
+    case 9: // RLIMIT_SBSIZE
+        break;
+    case 10: // RLIMIT_VMEM
+        break;
+    case 11: // RLIMIT_NPTS
+        break;
+    case 12: // RLIMIT_SWAP
+        break;
+    case 13: // RLIMIT_KQUEUES
+        break;
+    case 14: // RLIMIT_UMTXP
+        break;
+    default:
+        LOG_ERROR(Lib_Kernel, "Unknown resource limit: {}", resource);
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
+
+    rlp->rlim_cur = current;
+    rlp->rlim_max = max;
+
+    LOG_TRACE(Lib_Kernel, "called resource={}, cur={:#x}, max={:#x}", resource, current, max);
+    return ORBIS_OK;
+}
+
+s32 PS4_SYSV_ABI sceKernelSetrlimit(s32 resource, const OrbisKernelRlimit* rlp) {
+    if (!rlp) {
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
+    // We generally allow setting limits but might not enforce them strictly in HLE yet.
+    // Logging it is useful for debugging.
+    LOG_INFO(Lib_Kernel, "called resource={}, cur={:#x}, max={:#x}", resource, rlp->rlim_cur,
+             rlp->rlim_max);
     return ORBIS_OK;
 }
 
@@ -273,6 +348,8 @@ void RegisterProcess(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("6Z83sYWFlA8", "libkernel", 1, "libkernel", exit);
     LIB_FUNCTION("kpJLgS4gL2s", "libkernel", 1, "libkernel", sceKernelGetCpuTemperature);
     LIB_FUNCTION("qIuPAUHlC2Y", "libkernel", 1, "libkernel", sceKernelGetSocSensorTemperature);
+    LIB_FUNCTION("Pr7L+m04o00", "libkernel", 1, "libkernel", sceKernelGetrlimit);
+    LIB_FUNCTION("d81-s1+8V+4", "libkernel", 1, "libkernel", sceKernelSetrlimit);
 }
 
 } // namespace Libraries::Kernel

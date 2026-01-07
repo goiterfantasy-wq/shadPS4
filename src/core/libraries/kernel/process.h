@@ -23,12 +23,20 @@ struct OrbisModuleInfoForUnwind {
     u64 seg0_size;
 };
 
+struct OrbisKernelRlimit {
+    u64 rlim_cur;
+    u64 rlim_max;
+};
+
 s32 PS4_SYSV_ABI sceKernelIsNeoMode();
 
 s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver);
 
 s32 PS4_SYSV_ABI sceKernelGetModuleInfoForUnwind(VAddr addr, s32 flags,
                                                  OrbisModuleInfoForUnwind* info);
+
+s32 PS4_SYSV_ABI sceKernelGetrlimit(s32 resource, OrbisKernelRlimit* rlp);
+s32 PS4_SYSV_ABI sceKernelSetrlimit(s32 resource, const OrbisKernelRlimit* rlp);
 
 void RegisterProcess(Core::Loader::SymbolsResolver* sym);
 
