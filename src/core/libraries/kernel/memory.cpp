@@ -848,6 +848,15 @@ s32 PS4_SYSV_ABI sceKernelMsync(void* addr, size_t len, s32 flags) {
     return posix_msync(addr, len, flags) == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
 }
 
+s32 PS4_SYSV_ABI sceKernelMadvise(void* addr, u64 len, s32 advice) {
+    LOG_INFO(Kernel_Vmm, "addr = {}, len = {:#x}, advice = {:#x}", fmt::ptr(addr), len, advice);
+    if (len == 0) {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
+    auto* memory = Core::Memory::Instance();
+    return memory->Madvise(std::bit_cast<VAddr>(addr), len, advice);
+}
+
 void RegisterMemory(Core::Loader::SymbolsResolver* sym) {
     ASSERT_MSG(sceKernelGetCompiledSdkVersion(&g_sdk_version) == ORBIS_OK,
                "Failed to get compiled SDK verision.");
@@ -922,6 +931,7 @@ void RegisterMemory(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("WnEPVwrevo0", "libkernel", 1, "libkernel", posix_msync);
     LIB_FUNCTION("WnEPVwrevo0", "libScePosix", 1, "libkernel", posix_msync);
     LIB_FUNCTION("cE-5Sfo7Iog", "libkernel", 1, "libkernel", sceKernelMsync);
+    LIB_FUNCTION("s+9qW+F+0W0", "libkernel", 1, "libkernel", sceKernelMadvise);
 }
 
 } // namespace Libraries::Kernel

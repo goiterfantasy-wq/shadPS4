@@ -385,7 +385,7 @@ struct AddressSpace::Impl {
         }
     }
 
-    void Protect(VAddr virtual_addr, size_t size, bool read, bool write, bool execute) {
+    void Protect(VAddr virtual_addr, size_t size, MemoryPermission perms) {
         DWORD new_flags{};
 
         if (write && !read) {
@@ -438,6 +438,35 @@ struct AddressSpace::Impl {
                     range_addr, range_size);
             }
         }
+    }
+
+    s32 Madvise(VAddr virtual_addr, size_t size, s32 advice) {
+        // MADV_DONTNEED (4) is the most common advice.
+        // On Windows, MEM_RESET is the closest equivalent.
+        if (advice == 4) {
+            // Iterate over regions in range
+            const VAddr virtual_end = virtual_addr + size;
+            auto it = --regions.upper_bound(virtual_addr);
+            
+            for (; it != regions.end() && it->first < virtual_end; ++it) {
+                if (!it->second.is_mapped) {
+                    continue;
+                }
+                const auto& region = it->second;
+                const size_t range_addr = std::max(region.base, virtual_addr);
+                const size_t range_size = std::min(region.base + region.size, virtual_end) - range_addr;
+
+                // MEM_RESET indicates that data in the memory range specified by lpAddress and dwSize is no longer of interest.
+                // The pages should not be read from or written to the paging file.
+                // However, the memory block will NOT be zeroed out.
+                if (!VirtualAlloc(reinterpret_cast<void*>(range_addr), range_size, MEM_RESET, PAGE_READWRITE)) {
+                     LOG_WARNING(Kernel_Vmm, "VirtualAlloc MEM_RESET failed for {:#x} size {:#x}", range_addr, range_size);
+                     // This is advisory, so failure isn't critical
+                }
+            }
+            return 0; // ORBIS_OK
+        }
+        return 0;
     }
 
     boost::icl::interval_set<VAddr> GetUsableRegions() {
@@ -634,21 +663,30 @@ struct AddressSpace::Impl {
         ASSERT_MSG(ret != MAP_FAILED, "mmap failed: {}", strerror(errno));
     }
 
-    void Protect(VAddr virtual_addr, size_t size, bool read, bool write, bool execute) {
+    void Protect(VAddr virtual_addr, size_t size, MemoryPermission perms) {
         int flags = PROT_NONE;
-        if (read) {
+        if (True(perms & MemoryPermission::Read)) {
             flags |= PROT_READ;
         }
-        if (write) {
+        if (True(perms & MemoryPermission::Write)) {
             flags |= PROT_WRITE;
         }
 #ifdef ARCH_X86_64
-        if (execute) {
+        if (True(perms & MemoryPermission::Execute)) {
             flags |= PROT_EXEC;
         }
 #endif
         int ret = mprotect(reinterpret_cast<void*>(virtual_addr), size, flags);
         ASSERT_MSG(ret == 0, "mprotect failed: {}", strerror(errno));
+    }
+
+    s32 Madvise(VAddr virtual_addr, size_t size, s32 advice) {
+        int ret = madvise(reinterpret_cast<void*>(virtual_addr), size, advice);
+        if (ret != 0) {
+            LOG_WARNING(Kernel_Vmm, "madvise failed: {}", strerror(errno));
+            return -1;
+        }
+        return 0;
     }
 
     int backing_fd;
@@ -696,6 +734,10 @@ void* AddressSpace::MapFile(VAddr virtual_addr, size_t size, size_t offset, u32 
     return impl->Map(virtual_addr, offset, size, ToPosixProt(std::bit_cast<Core::MemoryProt>(prot)),
                      fd);
 #endif
+}
+
+s32 AddressSpace::Madvise(VAddr virtual_addr, size_t size, s32 advice) {
+    return impl->Madvise(virtual_addr, size, advice);
 }
 
 void AddressSpace::Unmap(VAddr virtual_addr, size_t size, VAddr start_in_vma, VAddr end_in_vma,

@@ -949,6 +949,17 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
     return ORBIS_OK;
 }
 
+s32 MemoryManager::Madvise(VAddr addr, u64 size, s32 advice) {
+    std::scoped_lock lk{mutex};
+    if (size == 0) {
+        return ORBIS_OK;
+    }
+    // Ensure the range to modify is valid
+    ASSERT_MSG(IsValidMapping(addr, size), "Attempted to access invalid address {:#x}", addr);
+
+    return impl.Madvise(addr, size, advice);
+}
+
 s32 MemoryManager::VirtualQuery(VAddr addr, s32 flags,
                                 ::Libraries::Kernel::OrbisVirtualQueryInfo* info) {
     std::scoped_lock lk{mutex};

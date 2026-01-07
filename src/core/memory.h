@@ -280,6 +280,8 @@ public:
 
     s32 Protect(VAddr addr, u64 size, MemoryProt prot);
 
+    s32 Madvise(VAddr addr, u64 size, s32 advice);
+
     s64 ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 size, MemoryProt prot);
 
     s32 VirtualQuery(VAddr addr, s32 flags, ::Libraries::Kernel::OrbisVirtualQueryInfo* info);

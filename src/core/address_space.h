@@ -85,6 +85,8 @@ public:
 
     void Protect(VAddr virtual_addr, size_t size, MemoryPermission perms);
 
+    s32 Madvise(VAddr virtual_addr, size_t size, s32 advice);
+
     // Returns an interval set containing all usable regions.
     boost::icl::interval_set<VAddr> GetUsableRegions();
 
