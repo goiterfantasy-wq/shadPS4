@@ -104,7 +104,7 @@
 [submodule "externals/ext-wepoll"]
 	path = externals/ext-wepoll
 	url = https://github.com/shadps4-emu/ext-wepoll.git
-	shallow = true
+	shallow = true 
 	branch = dist
 [submodule "externals/MoltenVK"]
 	path = externals/MoltenVK
