@@ -16,7 +16,7 @@ namespace Libraries::Kernel {
 
 static constexpr u32 BARRIER_VALID = 0xBAB1F00D;
 static constexpr u32 BARRIER_DEAD = 0xDEADBEEF;
-static constexpr int PTHREAD_BARRIER_SERIAL_THREAD = -1;
+static constexpr int SHAD_PTHREAD_BARRIER_SERIAL_THREAD = -1;
 
 struct PthreadBarrierAttr {
     int pshared;
@@ -158,7 +158,7 @@ int PS4_SYSV_ABI posix_pthread_barrier_wait(PthreadBarrierT* bar) {
         bv->waiters = 0;
         bv->cycle++;
         bv->cond.notify_all();
-        return PTHREAD_BARRIER_SERIAL_THREAD;
+        return SHAD_PTHREAD_BARRIER_SERIAL_THREAD;
     } else {
         int cycle = bv->cycle;
         bv->refcount++;
@@ -233,8 +233,8 @@ int PS4_SYSV_ABI scePthreadBarrierDestroy(PthreadBarrierT* bar) {
 
 int PS4_SYSV_ABI scePthreadBarrierWait(PthreadBarrierT* bar) {
     int result = posix_pthread_barrier_wait(bar);
-    // Note: PTHREAD_BARRIER_SERIAL_THREAD (-1) is a valid return value
-    if (result == PTHREAD_BARRIER_SERIAL_THREAD) {
+    // Note: SHAD_PTHREAD_BARRIER_SERIAL_THREAD (-1) is a valid return value
+    if (result == SHAD_PTHREAD_BARRIER_SERIAL_THREAD) {
         return ORBIS_KERNEL_PTHREAD_BARRIER_SERIAL;
     }
     return result == 0 ? ORBIS_OK : ErrnoToSceKernelError(result);
