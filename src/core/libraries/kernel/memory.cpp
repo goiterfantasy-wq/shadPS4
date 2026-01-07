@@ -797,6 +797,57 @@ s32 PS4_SYSV_ABI sceKernelGetPrtAperture(s32 id, VAddr* address, u64* size) {
     return ORBIS_OK;
 }
 
+// Memory locking functions - these are mostly no-ops on modern systems
+// but some games call them for performance hints
+s32 PS4_SYSV_ABI posix_mlock(const void* addr, size_t len) {
+    LOG_DEBUG(Kernel_Vmm, "mlock addr={:#x}, len={:#x}", reinterpret_cast<uintptr_t>(addr), len);
+    // On most systems, mlock is a hint and can be safely ignored
+    return 0;
+}
+
+s32 PS4_SYSV_ABI posix_munlock(const void* addr, size_t len) {
+    LOG_DEBUG(Kernel_Vmm, "munlock addr={:#x}, len={:#x}", reinterpret_cast<uintptr_t>(addr), len);
+    return 0;
+}
+
+s32 PS4_SYSV_ABI posix_mlockall(s32 flags) {
+    LOG_DEBUG(Kernel_Vmm, "mlockall flags={:#x}", flags);
+    return 0;
+}
+
+s32 PS4_SYSV_ABI posix_munlockall() {
+    LOG_DEBUG(Kernel_Vmm, "munlockall");
+    return 0;
+}
+
+s32 PS4_SYSV_ABI sceKernelMlock(const void* addr, size_t len) {
+    return posix_mlock(addr, len) == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
+}
+
+s32 PS4_SYSV_ABI sceKernelMunlock(const void* addr, size_t len) {
+    return posix_munlock(addr, len) == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
+}
+
+s32 PS4_SYSV_ABI sceKernelMlockall(s32 flags) {
+    return posix_mlockall(flags) == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
+}
+
+s32 PS4_SYSV_ABI sceKernelMunlockall() {
+    return posix_munlockall() == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
+}
+
+// msync - synchronize memory with physical storage
+s32 PS4_SYSV_ABI posix_msync(void* addr, size_t len, s32 flags) {
+    LOG_DEBUG(Kernel_Vmm, "msync addr={:#x}, len={:#x}, flags={:#x}",
+              reinterpret_cast<uintptr_t>(addr), len, flags);
+    // Most implementations can safely return success
+    return 0;
+}
+
+s32 PS4_SYSV_ABI sceKernelMsync(void* addr, size_t len, s32 flags) {
+    return posix_msync(addr, len, flags) == 0 ? ORBIS_OK : ORBIS_KERNEL_ERROR_EINVAL;
+}
+
 void RegisterMemory(Core::Loader::SymbolsResolver* sym) {
     ASSERT_MSG(sceKernelGetCompiledSdkVersion(&g_sdk_version) == ORBIS_OK,
                "Failed to get compiled SDK verision.");
@@ -854,6 +905,23 @@ void RegisterMemory(Core::Loader::SymbolsResolver* sym) {
     // PRT memory management
     LIB_FUNCTION("BohYr-F7-is", "libkernel", 1, "libkernel", sceKernelSetPrtAperture);
     LIB_FUNCTION("L0v2Go5jOuM", "libkernel", 1, "libkernel", sceKernelGetPrtAperture);
+
+    // Memory locking functions
+    LIB_FUNCTION("hTEMONj7bro", "libkernel", 1, "libkernel", posix_mlock);
+    LIB_FUNCTION("hTEMONj7bro", "libScePosix", 1, "libkernel", posix_mlock);
+    LIB_FUNCTION("xnpwfutTvjw", "libkernel", 1, "libkernel", posix_munlock);
+    LIB_FUNCTION("xnpwfutTvjw", "libScePosix", 1, "libkernel", posix_munlock);
+    LIB_FUNCTION("uRYPL-hG75g", "libkernel", 1, "libkernel", posix_mlockall);
+    LIB_FUNCTION("uRYPL-hG75g", "libScePosix", 1, "libkernel", posix_mlockall);
+    LIB_FUNCTION("EBP-+noYBbA", "libkernel", 1, "libkernel", posix_munlockall);
+    LIB_FUNCTION("EBP-+noYBbA", "libScePosix", 1, "libkernel", posix_munlockall);
+    LIB_FUNCTION("hy0-oaUdwew", "libkernel", 1, "libkernel", sceKernelMlock);
+    LIB_FUNCTION("0yvyk-uIsto", "libkernel", 1, "libkernel", sceKernelMunlock);
+    LIB_FUNCTION("p8EwrdGfqKQ", "libkernel", 1, "libkernel", sceKernelMlockall);
+    LIB_FUNCTION("eBmgqetNSeA", "libkernel", 1, "libkernel", sceKernelMunlockall);
+    LIB_FUNCTION("WnEPVwrevo0", "libkernel", 1, "libkernel", posix_msync);
+    LIB_FUNCTION("WnEPVwrevo0", "libScePosix", 1, "libkernel", posix_msync);
+    LIB_FUNCTION("cE-5Sfo7Iog", "libkernel", 1, "libkernel", sceKernelMsync);
 }
 
 } // namespace Libraries::Kernel

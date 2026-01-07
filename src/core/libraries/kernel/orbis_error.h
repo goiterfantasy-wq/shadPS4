@@ -106,3 +106,6 @@ constexpr int ORBIS_KERNEL_ERROR_ECAPMODE = 0x8002005E;
 constexpr int ORBIS_KERNEL_ERROR_ENOBLK = 0x8002005F;
 constexpr int ORBIS_KERNEL_ERROR_EICV = 0x80020060;
 constexpr int ORBIS_KERNEL_ERROR_ENOPLAYGOENT = 0x80020061;
+
+// Special return values (not errors)
+constexpr int ORBIS_KERNEL_PTHREAD_BARRIER_SERIAL = 1;

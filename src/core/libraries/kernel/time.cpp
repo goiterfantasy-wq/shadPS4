@@ -15,6 +15,7 @@
 
 #ifdef _WIN64
 #include <windows.h>
+#include <psapi.h>
 #include "common/ntapi.h"
 #else
 #ifdef __APPLE__
@@ -543,6 +544,124 @@ s32 PS4_SYSV_ABI sceKernelSettimeofday(OrbisKernelTimeval* _tv, OrbisKernelTimez
     return ret;
 }
 
+// Resource usage structure matching PS4 ABI
+struct OrbisRusage {
+    OrbisKernelTimeval ru_utime;    // user time used
+    OrbisKernelTimeval ru_stime;    // system time used
+    s64 ru_maxrss;                  // max resident set size
+    s64 ru_ixrss;                   // integral shared text memory size
+    s64 ru_idrss;                   // integral unshared data size
+    s64 ru_isrss;                   // integral unshared stack size
+    s64 ru_minflt;                  // page reclaims
+    s64 ru_majflt;                  // page faults
+    s64 ru_nswap;                   // swaps
+    s64 ru_inblock;                 // block input operations
+    s64 ru_oublock;                 // block output operations
+    s64 ru_msgsnd;                  // messages sent
+    s64 ru_msgrcv;                  // messages received
+    s64 ru_nsignals;                // signals received
+    s64 ru_nvcsw;                   // voluntary context switches
+    s64 ru_nivcsw;                  // involuntary context switches
+};
+
+constexpr s32 ORBIS_RUSAGE_SELF = 0;
+constexpr s32 ORBIS_RUSAGE_CHILDREN = -1;
+constexpr s32 ORBIS_RUSAGE_THREAD = 1;
+
+s32 PS4_SYSV_ABI posix_getrusage(s32 who, OrbisRusage* usage) {
+    if (usage == nullptr) {
+        SetPosixErrno(EFAULT);
+        return -1;
+    }
+
+#ifdef _WIN64
+    // Windows implementation
+    FILETIME creation_time, exit_time, kernel_time, user_time;
+    if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time, &user_time)) {
+        SetPosixErrno(EINVAL);
+        return -1;
+    }
+
+    // Convert FILETIME (100ns intervals) to timeval
+    auto filetime_to_timeval = [](FILETIME ft) -> OrbisKernelTimeval {
+        u64 ticks = (static_cast<u64>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+        OrbisKernelTimeval tv;
+        tv.tv_sec = static_cast<s64>(ticks / 10000000);
+        tv.tv_usec = static_cast<s64>((ticks % 10000000) / 10);
+        return tv;
+    };
+
+    *usage = {};
+    usage->ru_utime = filetime_to_timeval(user_time);
+    usage->ru_stime = filetime_to_timeval(kernel_time);
+
+    // Get memory info
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        usage->ru_maxrss = pmc.PeakWorkingSetSize / 1024;
+        usage->ru_majflt = pmc.PageFaultCount;
+    }
+
+    return 0;
+#else
+    // POSIX implementation
+    int posix_who;
+    switch (who) {
+    case ORBIS_RUSAGE_SELF:
+        posix_who = RUSAGE_SELF;
+        break;
+    case ORBIS_RUSAGE_CHILDREN:
+        posix_who = RUSAGE_CHILDREN;
+        break;
+    case ORBIS_RUSAGE_THREAD:
+#ifdef RUSAGE_THREAD
+        posix_who = RUSAGE_THREAD;
+#else
+        posix_who = RUSAGE_SELF;
+#endif
+        break;
+    default:
+        SetPosixErrno(EINVAL);
+        return -1;
+    }
+
+    struct rusage ru;
+    if (getrusage(posix_who, &ru) < 0) {
+        SetPosixErrno(errno);
+        return -1;
+    }
+
+    *usage = {};
+    usage->ru_utime.tv_sec = ru.ru_utime.tv_sec;
+    usage->ru_utime.tv_usec = ru.ru_utime.tv_usec;
+    usage->ru_stime.tv_sec = ru.ru_stime.tv_sec;
+    usage->ru_stime.tv_usec = ru.ru_stime.tv_usec;
+    usage->ru_maxrss = ru.ru_maxrss;
+    usage->ru_ixrss = ru.ru_ixrss;
+    usage->ru_idrss = ru.ru_idrss;
+    usage->ru_isrss = ru.ru_isrss;
+    usage->ru_minflt = ru.ru_minflt;
+    usage->ru_majflt = ru.ru_majflt;
+    usage->ru_nswap = ru.ru_nswap;
+    usage->ru_inblock = ru.ru_inblock;
+    usage->ru_oublock = ru.ru_oublock;
+    usage->ru_msgsnd = ru.ru_msgsnd;
+    usage->ru_msgrcv = ru.ru_msgrcv;
+    usage->ru_nsignals = ru.ru_nsignals;
+    usage->ru_nvcsw = ru.ru_nvcsw;
+    usage->ru_nivcsw = ru.ru_nivcsw;
+
+    return 0;
+#endif
+}
+
+s32 PS4_SYSV_ABI sceKernelGetrusage(s32 who, OrbisRusage* usage) {
+    if (posix_getrusage(who, usage) < 0) {
+        return ErrnoToSceKernelError(*__Error());
+    }
+    return ORBIS_OK;
+}
+
 void RegisterTime(Core::Loader::SymbolsResolver* sym) {
     clock = std::make_unique<Common::NativeClock>();
     initial_ptc = clock->GetUptime();
@@ -580,6 +699,11 @@ void RegisterTime(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("kOcnerypnQA", "libkernel", 1, "libkernel", sceKernelGettimezone);
     LIB_FUNCTION("0NTHN1NKONI", "libkernel", 1, "libkernel", sceKernelConvertLocaltimeToUtc);
     LIB_FUNCTION("-o5uEDpN+oY", "libkernel", 1, "libkernel", sceKernelConvertUtcToLocaltime);
+
+    // Resource usage
+    LIB_FUNCTION("4r+s6Z3xgK0", "libkernel", 1, "libkernel", posix_getrusage);
+    LIB_FUNCTION("4r+s6Z3xgK0", "libScePosix", 1, "libkernel", posix_getrusage);
+    LIB_FUNCTION("a5EkUPHt0b4", "libkernel", 1, "libkernel", sceKernelGetrusage);
 }
 
 } // namespace Libraries::Kernel

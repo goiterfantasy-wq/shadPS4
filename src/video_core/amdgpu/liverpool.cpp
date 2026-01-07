@@ -416,6 +416,19 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
+            case PM4ItOpcode::DrawPreamble: {
+                const auto* draw_preamble = reinterpret_cast<const PM4CmdDrawPreamble*>(header);
+                // VGT_PRIMITIVE_TYPE is at uconfig offset 0x242
+                regs.reg_array[Regs::UconfigRegWordOffset + 0x242] =
+                    draw_preamble->vgt_primitive_type;
+                // IA_MULTI_VGT_PARAM is at context offset 0x2AA
+                regs.reg_array[Regs::ContextRegWordOffset + 0x2AA] =
+                    draw_preamble->ia_multi_vgt_param;
+                // VGT_LS_HS_CONFIG is at context offset 0x2D6
+                regs.reg_array[Regs::ContextRegWordOffset + 0x2D6] =
+                    draw_preamble->vgt_ls_hs_config;
+                break;
+            }
             case PM4ItOpcode::IndexType: {
                 const auto* index_type = reinterpret_cast<const PM4CmdDrawIndexType*>(header);
                 regs.index_buffer_type.raw = index_type->raw;
@@ -717,8 +730,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         }
                     } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
                         const u64 src = copy->SrcAddress<u64>();
-                        if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
-                                                    reinterpret_cast<const void*>(src), num_bytes)) {
+                        if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst),
+                                                     reinterpret_cast<const void*>(src), num_bytes)) {
                             std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
                         }
                     } else {
@@ -818,6 +831,50 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::GetLodStats: {
                 LOG_WARNING(Render_Vulkan, "Unimplemented IT_GET_LOD_STATS");
+                break;
+            }
+            case PM4ItOpcode::FrameControl: {
+                const auto* frame_ctrl = reinterpret_cast<const PM4CmdFrameControl*>(header);
+                LOG_TRACE(Render_Vulkan, "IT_FRAME_CONTROL: command={}, tmz_enable={}",
+                          frame_ctrl->command.Value(), frame_ctrl->tmz_enable.Value());
+                break;
+            }
+            case PM4ItOpcode::IndexAttributesIndirect: {
+                const auto* idx_attr =
+                    reinterpret_cast<const PM4CmdIndexAttributesIndirect*>(header);
+                LOG_WARNING(Render_Vulkan, "Unimplemented IT_INDEX_ATTRIBUTES_INDIRECT");
+                break;
+            }
+            case PM4ItOpcode::WaitRegMem64: {
+                // Similar to WaitRegMem but with 64-bit address
+                LOG_WARNING(Render_Vulkan, "Unimplemented IT_WAIT_REG_MEM64");
+                break;
+            }
+            case PM4ItOpcode::DrawIndexMultiInst: {
+                const auto* draw_multi =
+                    reinterpret_cast<const PM4CmdDrawIndexMultiInst*>(header);
+                regs.num_indices = draw_multi->index_count;
+                regs.draw_initiator = draw_multi->draw_initiator;
+                regs.num_instances.num_instances = draw_multi->num_instances;
+                if (DebugState.DumpingCurrentReg()) {
+                    DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
+                }
+                if (rasterizer) {
+                    const auto cmd_address = reinterpret_cast<const void*>(header);
+                    rasterizer->ScopeMarkerBegin(
+                        fmt::format("gfx:{}:DrawIndexMultiInst", cmd_address));
+                    rasterizer->Draw(true, draw_multi->index_offset);
+                    rasterizer->ScopeMarkerEnd();
+                }
+                break;
+            }
+            case PM4ItOpcode::CopyDw: {
+                const auto* copy_dw = reinterpret_cast<const PM4CmdCopyDw*>(header);
+                LOG_WARNING(Render_Vulkan, "Unimplemented IT_COPY_DW");
+                break;
+            }
+            case PM4ItOpcode::DrawIndirectCountMulti: {
+                LOG_WARNING(Render_Vulkan, "Unimplemented IT_DRAW_INDIRECT_COUNT_MULTI");
                 break;
             }
             case PM4ItOpcode::CondExec: {
@@ -1059,8 +1116,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                     }
                 } else if (copy->src_sel == CopyDataSrc::Memory || copy->src_sel == CopyDataSrc::TCL2) {
                     const u64 src = copy->SrcAddress<u64>();
-                    if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
-                                                reinterpret_cast<const void*>(src), num_bytes)) {
+                    if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst),
+                                                 reinterpret_cast<const void*>(src), num_bytes)) {
                         std::memcpy(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
                     }
                 } else {
