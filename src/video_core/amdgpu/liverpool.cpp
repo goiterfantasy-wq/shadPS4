@@ -412,6 +412,42 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                             header + 2, (count - 1) * sizeof(u32));
                 break;
             }
+            case PM4ItOpcode::LoadConfigReg: {
+                const auto* load = reinterpret_cast<const PM4CmdLoadData*>(header);
+                auto* memory = Core::Memory::Instance();
+                const u64 src = (u64(load->addr_hi.addr_hi.Value()) << 32) | load->addr_lo;
+                const auto dst_off = Regs::ConfigRegWordOffset + load->reg_offset;
+                const auto num_bytes = load->num_dwords * sizeof(u32);
+                if (!memory->TryCopyBacking(&regs.reg_array[dst_off],
+                                            reinterpret_cast<const void*>(src), num_bytes)) {
+                    std::memcpy(&regs.reg_array[dst_off], reinterpret_cast<const void*>(src), num_bytes);
+                }
+                break;
+            }
+            case PM4ItOpcode::LoadContextReg: {
+                const auto* load = reinterpret_cast<const PM4CmdLoadData*>(header);
+                auto* memory = Core::Memory::Instance();
+                const u64 src = (u64(load->addr_hi.addr_hi.Value()) << 32) | load->addr_lo;
+                const auto dst_off = Regs::ContextRegWordOffset + load->reg_offset;
+                const auto num_bytes = load->num_dwords * sizeof(u32);
+                if (!memory->TryCopyBacking(&regs.reg_array[dst_off],
+                                            reinterpret_cast<const void*>(src), num_bytes)) {
+                    std::memcpy(&regs.reg_array[dst_off], reinterpret_cast<const void*>(src), num_bytes);
+                }
+                break;
+            }
+            case PM4ItOpcode::LoadShReg: {
+                const auto* load = reinterpret_cast<const PM4CmdLoadData*>(header);
+                auto* memory = Core::Memory::Instance();
+                const u64 src = (u64(load->addr_hi.addr_hi.Value()) << 32) | load->addr_lo;
+                const auto dst_off = Regs::ShRegWordOffset + load->reg_offset;
+                const auto num_bytes = load->num_dwords * sizeof(u32);
+                if (!memory->TryCopyBacking(&regs.reg_array[dst_off],
+                                            reinterpret_cast<const void*>(src), num_bytes)) {
+                    std::memcpy(&regs.reg_array[dst_off], reinterpret_cast<const void*>(src), num_bytes);
+                }
+                break;
+            }
             case PM4ItOpcode::SetPredication: {
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
