@@ -204,6 +204,7 @@ private:
     VAddr base_addr_indirect_data{};
     u32 num_counter_pairs{};
     u64 pixel_counter{};
+    PixelPipeStatControl pixel_pipe_stat_control{};
 
     struct ConstantEngine {
         void Reset() {

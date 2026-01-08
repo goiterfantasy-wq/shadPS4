@@ -690,11 +690,14 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     // TODO: handle proper synchronization, for now signal that update is done
                     // immediately
                     regs.cp_strmout_cntl.offset_update_done = 1;
+                } else if (event->event_type.Value() == EventType::PixelPipeStatControl) {
+                    pixel_pipe_stat_control.raw = event->control.raw;
                 } else if (event->event_index.Value() == EventIndex::ZpassDone) {
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
+                        // TODO: Use pixel_pipe_stat_control to determine what to dump
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             *results = pixel_counter | OcclusionCounterValidMask;
                         }
@@ -771,13 +774,38 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::WriteData: {
                 const auto* write_data = reinterpret_cast<const PM4CmdWriteData*>(header);
-                ASSERT(write_data->dst_sel.Value() == 2 || write_data->dst_sel.Value() == 5);
+                // DST_SEL: 0=Register, 1=MemorySync, 2=TCL2, 3=GDS, 5=MemoryAsync
+                ASSERT(write_data->dst_sel.Value() == 0 || write_data->dst_sel.Value() == 1 ||
+                       write_data->dst_sel.Value() == 2 || write_data->dst_sel.Value() == 3 ||
+                       write_data->dst_sel.Value() == 5);
+                
                 const u32 data_size = (header->type3.count.Value() - 2) * 4;
-                u64* address = write_data->Address<u64*>();
-                if (!write_data->wr_one_addr.Value()) {
-                    std::memcpy(address, write_data->data, data_size);
-                } else {
-                    UNREACHABLE();
+                
+                if (write_data->dst_sel.Value() == 0) { // Register
+                    const u32 reg_offset = write_data->dst_addr_lo;
+                    // TODO: Handle auto-increment if needed (though usually implied for WriteData)
+                    if (reg_offset + (data_size / 4) <= Regs::NumRegs) {
+                        std::memcpy(&regs.reg_array[reg_offset], write_data->data, data_size);
+                    } else {
+                        LOG_ERROR(Render, "WriteData (Register) out of bounds: offset={}, size={}", reg_offset, data_size);
+                    }
+                } else if (write_data->dst_sel.Value() == 3) { // GDS
+                     // TODO: Implement GDS writes properly. For now, if we have a rasterizer, maybe we can use it?
+                     // Rasterizer interface for direct GDS write might not exist or match this pattern.
+                     // fpps4 logs it. shadps4 previous code would unreachable.
+                     // If data_size is small, we can try to use rasterizer if it supports it.
+                     if (rasterizer) {
+                         // GDS is usually accessed via DmaData or EventWriteEos.
+                         // Direct WriteData to GDS is rare but possible.
+                         LOG_WARNING(Render, "WriteData to GDS unimplemented");
+                     }
+                } else { // Memory (Sync/Async/TCL2)
+                    u64* address = write_data->Address<u64*>();
+                    if (!write_data->wr_one_addr.Value()) {
+                        std::memcpy(address, write_data->data, data_size);
+                    } else {
+                        UNREACHABLE();
+                    }
                 }
                 break;
             }

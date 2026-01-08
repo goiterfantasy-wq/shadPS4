@@ -462,6 +462,15 @@ enum class EventIndex : u32 {
     CacheFlush = 7,
 };
 
+union PixelPipeStatControl {
+    u32 raw;
+    BitField<0, 3, u32> reserved1;
+    BitField<3, 6, u32> counter_id;      ///< Enum of which counts to dump
+    BitField<9, 2, u32> stride;          ///< PixelPipeStride enum
+    BitField<11, 16, u32> instance_enable; ///< Mask of which of the RBs must dump the data
+    BitField<27, 5, u32> reserved2;
+};
+
 struct PM4CmdEventWrite {
     PM4Type3Header header;
     union {
@@ -470,7 +479,10 @@ struct PM4CmdEventWrite {
         BitField<8, 4, EventIndex> event_index; ///< Event index
         BitField<20, 1, u32> inv_l2; ///< Send WBINVL2 op to the TC L2 cache when EVENT_INDEX = 0111
     };
-    u32 address[];
+    union {
+        u32 address[0];
+        PixelPipeStatControl control;
+    };
 
     template <typename T>
     T Address() const {
