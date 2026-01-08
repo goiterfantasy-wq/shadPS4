@@ -16,6 +16,7 @@ enum class PM4ItOpcode : u32 {
     DispatchIndirect = 0x16,
     AtomicGds = 0x1D,
     Atomic = 0x1E,
+    AtomicMem = 0x1E, // AtomicMem is the same as Atomic
     OcclusionQuery = 0x1F,
     SetPredication = 0x20,
     RegRmw = 0x21,
