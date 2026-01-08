@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstring>
+#include <span>
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "common/types.h"
@@ -1072,7 +1073,9 @@ struct PM4CmdSetBase {
         ASSERT(base_index == BaseIndex::DisplayListPatchTable ||
                base_index == BaseIndex::DrawIndexIndirPatchTable ||
                base_index == BaseIndex::LoadReg ||
-               base_index == BaseIndex::IndirectData);
+               base_index == BaseIndex::IndirectData ||
+               base_index == BaseIndex::GdsPartition ||
+               base_index == BaseIndex::CePartition);
         return address0 | (u64(address1 & 0xffff) << 32u);
     }
 };

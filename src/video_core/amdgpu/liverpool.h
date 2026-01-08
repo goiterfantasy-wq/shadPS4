@@ -203,6 +203,8 @@ private:
     VAddr base_addr_display_list{};
     VAddr base_addr_load_reg{};
     VAddr base_addr_indirect_data{};
+    VAddr base_addr_gds_partition{};
+    VAddr base_addr_ce_partition{};
     u32 num_counter_pairs{};
     u64 pixel_counter{};
     PixelPipeStatControl pixel_pipe_stat_control{};

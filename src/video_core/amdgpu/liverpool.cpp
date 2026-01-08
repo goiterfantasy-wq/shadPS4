@@ -689,6 +689,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 case PM4CmdSetBase::BaseIndex::IndirectData:
                     base_addr_indirect_data = set_base->GetAddress();
                     break;
+                case PM4CmdSetBase::BaseIndex::GdsPartition:
+                    base_addr_gds_partition = set_base->GetAddress();
+                    break;
+                case PM4CmdSetBase::BaseIndex::CePartition:
+                    base_addr_ce_partition = set_base->GetAddress();
+                    break;
                 default:
                     LOG_WARNING(Render, "Unimplemented SetBase base_index: {}",
                                 static_cast<u32>(set_base->base_index.Value()));
