@@ -177,14 +177,27 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::LoadConstRam: {
             const auto* load_const = reinterpret_cast<const PM4LoadConstRam*>(header);
-            memcpy(cblock.constants_heap.data() + load_const->Offset(), load_const->Address<void*>(),
-                   load_const->Size());
+            auto* memory = Core::Memory::Instance();
+            const u64 src_addr = load_const->Address<u64>();
+            const u32 size = load_const->Size();
+            if (!memory->TryCopyBacking(cblock.constants_heap.data() + load_const->Offset(),
+                                        reinterpret_cast<const void*>(src_addr), size)) {
+                std::vector<u8> buffer(size);
+                memory->Read(src_addr, buffer.data(), size);
+                std::memcpy(cblock.constants_heap.data() + load_const->Offset(), buffer.data(), size);
+            }
             break;
         }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
-            memcpy(dump_const->Address<void*>(),
-                   cblock.constants_heap.data() + dump_const->Offset(), dump_const->Size());
+            auto* memory = Core::Memory::Instance();
+            const u64 dst_addr = dump_const->Address<u64>();
+            const u32 size = dump_const->Size();
+            const void* src_ptr = cblock.constants_heap.data() + dump_const->Offset();
+            
+            if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst_addr), src_ptr, size)) {
+                memory->Write(dst_addr, src_ptr, size);
+            }
             break;
         }
         case PM4ItOpcode::IncrementCeCounter: {
@@ -681,11 +694,70 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 break;
             }
+            case PM4ItOpcode::AtomicMem: {
+                const auto* atomic_mem = reinterpret_cast<const PM4CmdAtomicMem*>(header);
+                auto* memory = Core::Memory::Instance();
+                const u64 addr = atomic_mem->Address<u64>();
+                const u32 src = atomic_mem->src_data_lo;
+                const u32 cmp = atomic_mem->cmp_data_lo;
+
+                u32 current_val = 0;
+                memory->Read(addr, &current_val, sizeof(u32));
+
+                u32 new_val = current_val;
+                switch (atomic_mem->atomic_op.Value()) {
+                case 0: // Add
+                    new_val = current_val + src;
+                    break;
+                case 1: // Sub
+                    new_val = current_val - src;
+                    break;
+                case 2: // RSub
+                    new_val = src - current_val;
+                    break;
+                case 3: // Min
+                    new_val = std::min(current_val, src);
+                    break;
+                case 4: // Max
+                    new_val = std::max(current_val, src);
+                    break;
+                case 5: // And
+                    new_val = current_val & src;
+                    break;
+                case 6: // Or
+                    new_val = current_val | src;
+                    break;
+                case 7: // Xor
+                    new_val = current_val ^ src;
+                    break;
+                case 8: // Swap
+                    new_val = src;
+                    break;
+                case 9: // CmpSwap
+                    if (current_val == cmp) {
+                        new_val = src;
+                    }
+                    break;
+                default:
+                    LOG_WARNING(Render, "Unimplemented AtomicMem op: {}",
+                                atomic_mem->atomic_op.Value());
+                    break;
+                }
+
+                memory->Write(addr, &new_val, sizeof(u32));
+                break;
+            }
             case PM4ItOpcode::EventWrite: {
                 const auto* event = reinterpret_cast<const PM4CmdEventWrite*>(header);
                 LOG_DEBUG(Render, "Encountered EventWrite: event_type = {}, event_index = {}",
                           magic_enum::enum_name(event->event_type.Value()),
                           magic_enum::enum_name(event->event_index.Value()));
+
+                if (rasterizer) {
+                    rasterizer->WriteEvent(event->event_type.Value(), event->Address<VAddr>(),
+                                           event->control.raw);
+                }
+
                 if (event->event_type.Value() == EventType::SoVgtStreamoutFlush) {
                     // TODO: handle proper synchronization, for now signal that update is done
                     // immediately
@@ -696,10 +768,23 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
-                        u64* results = event->Address<u64*>();
-                        // TODO: Use pixel_pipe_stat_control to determine what to dump
-                        for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
-                            *results = pixel_counter | OcclusionCounterValidMask;
+                        
+                        const u32 stride_bytes = 1 << (2 + pixel_pipe_stat_control.stride.Value());
+                        const u32 instance_mask = pixel_pipe_stat_control.instance_enable.Value();
+                        auto* memory = Core::Memory::Instance();
+                        u64 current_addr = event->Address<u64>();
+
+                        for (s32 i = 0; i < num_counter_pairs; ++i) {
+                            if ((instance_mask >> i) & 1) {
+                                if (stride_bytes == 4) {
+                                    const u32 val32 = static_cast<u32>(pixel_counter) | 0x80000000;
+                                    memory->Write(current_addr, &val32, sizeof(u32));
+                                } else {
+                                    const u64 val64 = pixel_counter | OcclusionCounterValidMask;
+                                    memory->Write(current_addr, &val64, sizeof(u64));
+                                }
+                            }
+                            current_addr += stride_bytes;
                         }
                         pixel_counter += OcclusionCounterStep;
                     }
@@ -737,10 +822,39 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::DmaData: {
-                const auto* dma_data = reinterpret_cast<const PM4DmaData*>(header);
-                if (dma_data->dst_addr_lo == 0x3022C || !rasterizer) {
+            const auto* dma_data = reinterpret_cast<const PM4DmaData*>(header);
+            if (dma_data->engine.Value() == 1) { // PFP Engine - CPU side copy
+                auto* memory = Core::Memory::Instance();
+                if ((dma_data->src_sel == DmaDataSrc::Memory ||
+                     dma_data->src_sel == DmaDataSrc::MemoryUsingL2) &&
+                    (dma_data->dst_sel == DmaDataDst::Memory ||
+                     dma_data->dst_sel == DmaDataDst::MemoryUsingL2)) {
+                    const auto size = dma_data->NumBytes();
+                    const auto src = dma_data->SrcAddress<u64>();
+                    const auto dst = dma_data->DstAddress<u64>();
+                    if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
+                                                reinterpret_cast<const void*>(src), size)) {
+                        std::vector<u8> buffer(size);
+                        memory->Read(src, buffer.data(), size);
+                        memory->Write(dst, buffer.data(), size);
+                    }
+                    break;
+                } else if (dma_data->src_sel == DmaDataSrc::Data &&
+                           (dma_data->dst_sel == DmaDataDst::Memory ||
+                            dma_data->dst_sel == DmaDataDst::MemoryUsingL2)) {
+                    const auto size = dma_data->NumBytes();
+                    const auto dst = dma_data->DstAddress<u64>();
+                    const u32 data = dma_data->data;
+                    for (u32 i = 0; i < size; i += 4) {
+                        memory->Write(dst + i, &data, sizeof(u32));
+                    }
                     break;
                 }
+            }
+
+            if (dma_data->dst_addr_lo == 0x3022C || !rasterizer) {
+                break;
+            }
                 if (dma_data->src_sel == DmaDataSrc::Data && dma_data->dst_sel == DmaDataDst::Gds) {
                     rasterizer->FillBuffer(dma_data->dst_addr_lo, dma_data->NumBytes(),
                                            dma_data->data, true);
@@ -800,9 +914,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                          LOG_WARNING(Render, "WriteData to GDS unimplemented");
                      }
                 } else { // Memory (Sync/Async/TCL2)
-                    u64* address = write_data->Address<u64*>();
+                    u64 address = write_data->Address<u64>();
                     if (!write_data->wr_one_addr.Value()) {
-                        std::memcpy(address, write_data->data, data_size);
+                        Core::Memory::Instance()->Write(address, write_data->data, data_size);
                     } else {
                         UNREACHABLE();
                     }
@@ -856,6 +970,16 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 regs.reg_array[Regs::UconfigRegWordOffset + 0x8C] = acquire_mem->cp_coher_size_hi;
                 break;
             }
+            case PM4ItOpcode::ReleaseMem: {
+                const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
+                release_mem->SignalFence(
+                    [](void* address, u64 data, u32 num_bytes) {
+                        auto* memory = Core::Memory::Instance();
+                        memory->Write(reinterpret_cast<u64>(address), &data, num_bytes);
+                    },
+                    [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
+                break;
+            }
             case PM4ItOpcode::Rewind: {
                 if (!rasterizer) {
                     break;
@@ -873,13 +997,19 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 // will write to the label when presentation is finished. So if
                 // there are no other submits to yield to we can sleep the thread
                 // instead and allow other tasks to run.
-                const u64* wait_addr = wait_reg_mem->Address<u64*>();
+                const u64* wait_addr = reinterpret_cast<const u64*>(wait_reg_mem->GetAddress());
+                auto read_mem = [](u64 addr) -> u32 {
+                    u32 val = 0;
+                    Core::Memory::Instance()->Read(addr, &val, sizeof(u32));
+                    return val;
+                };
+
                 if (vo_port->IsVoLabel(wait_addr) &&
                     num_submits == mapped_queues[GfxQueueId].submits.size()) {
-                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
+                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array, read_mem); });
                     break;
                 }
-                while (!wait_reg_mem->Test(regs.reg_array)) {
+                while (!wait_reg_mem->Test(regs.reg_array, read_mem)) {
                     YIELD_GFX();
                 }
                 break;
@@ -925,8 +1055,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         memory->Read(src_addr, &value, sizeof(u32));
                     } else if (strmout->source_select.Value() ==
                                SourceSelect::VgtStrmoutBufferFilledSize) {
-                        // TODO: Implement VGT_STRMOUT_BUFFER_FILLED_SIZE
-                        value = 0;
+                        // VGT_STRMOUT_BUFFER_FILLED_SIZE_0 is 0xC244 on VI
+                        constexpr u32 VGT_STRMOUT_BUFFER_FILLED_SIZE_0 = 0xC244;
+                        value = regs.reg_array[VGT_STRMOUT_BUFFER_FILLED_SIZE_0 +
+                                               strmout->buffer_select.Value()];
                     } else {
                         LOG_WARNING(Render_Vulkan,
                                     "Unimplemented StrmoutBufferUpdate source_select {}",
@@ -949,18 +1081,27 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::IndexAttributesIndirect: {
                 const auto* idx_attr =
                     reinterpret_cast<const PM4CmdIndexAttributesIndirect*>(header);
-                LOG_WARNING(Render_Vulkan, "Unimplemented IT_INDEX_ATTRIBUTES_INDIRECT");
+                regs.index_base_address.base_addr_lo = idx_attr->attribute_base_lo;
+                regs.index_base_address.base_addr_hi = idx_attr->attribute_base_hi;
+                regs.num_indices = idx_attr->attribute_index;
+                regs.index_buffer_type.raw = idx_attr->index_type;
                 break;
             }
             case PM4ItOpcode::WaitRegMem64: {
-                const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
-                const u64* wait_addr = wait_reg_mem->Address<u64*>();
-                if (vo_port->IsVoLabel(wait_addr) &&
+                const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem64*>(header);
+                auto read_mem = [](u64 addr) -> u64 {
+                    u64 val = 0;
+                    Core::Memory::Instance()->Read(addr, &val, sizeof(u64));
+                    return val;
+                };
+
+                const u64 wait_addr = wait_reg_mem->GetAddress();
+                if (vo_port->IsVoLabel(reinterpret_cast<const u64*>(wait_addr)) &&
                     num_submits == mapped_queues[GfxQueueId].submits.size()) {
-                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
+                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array, read_mem); });
                     break;
                 }
-                while (!wait_reg_mem->Test(regs.reg_array)) {
+                while (!wait_reg_mem->Test(regs.reg_array, read_mem)) {
                     YIELD_GFX();
                 }
                 break;
@@ -1036,7 +1177,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 if (cond_exec->command.Value() != 0) {
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
                 }
-                const auto skip = *cond_exec->Address() == false;
+                u32 val = 0;
+                Core::Memory::Instance()->Read(cond_exec->GetAddress(), &val, sizeof(u32));
+                const auto skip = val == 0;
                 if (skip) {
                     dcb = NextPacket(dcb,
                                      header->type3.NumWords() + 1 + cond_exec->exec_count.Value());
@@ -1151,6 +1294,35 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::DmaData: {
             const auto* dma_data = reinterpret_cast<const PM4DmaData*>(header);
+            if (dma_data->engine.Value() == 1) { // PFP Engine - CPU side copy
+                auto* memory = Core::Memory::Instance();
+                if ((dma_data->src_sel == DmaDataSrc::Memory ||
+                     dma_data->src_sel == DmaDataSrc::MemoryUsingL2) &&
+                    (dma_data->dst_sel == DmaDataDst::Memory ||
+                     dma_data->dst_sel == DmaDataDst::MemoryUsingL2)) {
+                    const auto size = dma_data->NumBytes();
+                    const auto src = dma_data->SrcAddress<u64>();
+                    const auto dst = dma_data->DstAddress<u64>();
+                    if (!memory->TryCopyBacking(reinterpret_cast<void*>(dst),
+                                                reinterpret_cast<const void*>(src), size)) {
+                        std::vector<u8> buffer(size);
+                        memory->Read(src, buffer.data(), size);
+                        memory->Write(dst, buffer.data(), size);
+                    }
+                    break;
+                } else if (dma_data->src_sel == DmaDataSrc::Data &&
+                           (dma_data->dst_sel == DmaDataDst::Memory ||
+                            dma_data->dst_sel == DmaDataDst::MemoryUsingL2)) {
+                    const auto size = dma_data->NumBytes();
+                    const auto dst = dma_data->DstAddress<u64>();
+                    const u32 data = dma_data->data;
+                    for (u32 i = 0; i < size; i += 4) {
+                        memory->Write(dst + i, &data, sizeof(u32));
+                    }
+                    break;
+                }
+            }
+
             if (dma_data->dst_addr_lo == 0x3022C || !rasterizer) {
                 break;
             }
@@ -1316,20 +1488,91 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::WaitRegMem: {
             const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
             ASSERT(wait_reg_mem->engine.Value() == PM4CmdWaitRegMem::Engine::Me);
-            while (!wait_reg_mem->Test(regs.reg_array)) {
+            auto read_mem = [](u64 addr) -> u32 {
+                u32 val = 0;
+                Core::Memory::Instance()->Read(addr, &val, sizeof(u32));
+                return val;
+            };
+            while (!wait_reg_mem->Test(regs.reg_array, read_mem)) {
                 YIELD_ASC(vqid);
             }
             break;
         }
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
-            release_mem->SignalFence([pipe_id = queue.pipe_id] {
-                Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
-            });
+            release_mem->SignalFence(
+                [](void* address, u64 data, u32 num_bytes) {
+                    auto* memory = Core::Memory::Instance();
+                    memory->Write(reinterpret_cast<u64>(address), &data, num_bytes);
+                },
+                [pipe_id = queue.pipe_id] {
+                    Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
+                });
+            break;
+        }
+        case PM4ItOpcode::AtomicMem: {
+            const auto* atomic_mem = reinterpret_cast<const PM4CmdAtomicMem*>(header);
+            auto* memory = Core::Memory::Instance();
+            const u64 addr = atomic_mem->Address<u64>();
+            const u32 src = atomic_mem->src_data_lo;
+            const u32 cmp = atomic_mem->cmp_data_lo;
+
+            u32 current_val = 0;
+            memory->Read(addr, &current_val, sizeof(u32));
+
+            u32 new_val = current_val;
+            switch (atomic_mem->atomic_op.Value()) {
+            case 0: // Add
+                new_val = current_val + src;
+                break;
+            case 1: // Sub
+                new_val = current_val - src;
+                break;
+            case 2: // RSub
+                new_val = src - current_val;
+                break;
+            case 3: // Min
+                new_val = std::min(current_val, src);
+                break;
+            case 4: // Max
+                new_val = std::max(current_val, src);
+                break;
+            case 5: // And
+                new_val = current_val & src;
+                break;
+            case 6: // Or
+                new_val = current_val | src;
+                break;
+            case 7: // Xor
+                new_val = current_val ^ src;
+                break;
+            case 8: // Swap
+                new_val = src;
+                break;
+            case 9: // CmpSwap
+                if (current_val == cmp) {
+                    new_val = src;
+                }
+                break;
+            default:
+                LOG_WARNING(Render, "Unimplemented AtomicMem op: {}",
+                            atomic_mem->atomic_op.Value());
+                break;
+            }
+
+            memory->Write(addr, &new_val, sizeof(u32));
             break;
         }
         case PM4ItOpcode::EventWrite: {
-            // const auto* event = reinterpret_cast<const PM4CmdEventWrite*>(header);
+            const auto* event = reinterpret_cast<const PM4CmdEventWrite*>(header);
+            LOG_DEBUG(Render, "Encountered EventWrite: event_type = {}, event_index = {}",
+                      magic_enum::enum_name(event->event_type.Value()),
+                      magic_enum::enum_name(event->event_index.Value()));
+
+            if (rasterizer) {
+                rasterizer->WriteEvent(event->event_type.Value(), event->Address<VAddr>(),
+                                       event->control.raw);
+            }
             break;
         }
         default:

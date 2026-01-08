@@ -66,6 +66,7 @@ public:
 
     void CpSync();
     u64 Flush();
+    void WriteEvent(AmdGpu::EventType event_type, VAddr address = 0, u32 value = 0);
     void Finish();
     void OnSubmit();
 

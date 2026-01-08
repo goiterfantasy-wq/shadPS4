@@ -1017,22 +1017,23 @@ struct PM4CmdReleaseMem {
         return data_lo | u64(data_hi) << 32;
     }
 
-    void SignalFence(auto&& signal_irq) const {
+    void SignalFence(auto&& write_mem, auto&& signal_irq) const {
+        u32* address = Address<u32>();
         switch (data_sel.Value()) {
         case DataSelect::Data32Low: {
-            *Address<u32>() = DataDWord();
+            write_mem(address, DataDWord(), sizeof(u32));
             break;
         }
         case DataSelect::Data64: {
-            *Address<u64>() = DataQWord();
+            write_mem(address, DataQWord(), sizeof(u64));
             break;
         }
         case DataSelect::GpuClock64: {
-            *Address<u64>() = GetGpuClock64();
+            write_mem(address, GetGpuClock64(), sizeof(u64));
             break;
         }
         case DataSelect::PerfCounter: {
-            *Address<u64>() = GetGpuPerfCounter();
+            write_mem(address, GetGpuPerfCounter(), sizeof(u64));
             break;
         }
         default: {
@@ -1084,6 +1085,19 @@ struct PM4CmdSetBase {
                base_index == BaseIndex::IndirectData);
         return reinterpret_cast<T>(address0 | (u64(address1 & 0xffff) << 32u));
     }
+};
+
+struct PM4CmdSetPredication {
+    PM4Type3Header header;
+    union {
+        u32 raw;
+        BitField<0, 1, u32> predicationBoolean;
+        BitField<1, 1, u32> hint;
+        BitField<4, 3, u32> predOp;
+        BitField<31, 1, u32> continueBit;
+    };
+    u32 addr_lo;
+    u32 addr_hi;
 };
 
 struct PM4CmdDispatchIndirect {
@@ -1283,6 +1297,115 @@ struct PM4CmdCondExec {
     bool* Address() const {
         return std::bit_cast<bool*>(u64(bool_addr_hi.Value()) << 32 | u64(bool_addr_lo.Value())
                                                                           << 2);
+    }
+
+    u64 GetAddress() const {
+        return u64(bool_addr_hi.Value()) << 32 | u64(bool_addr_lo.Value()) << 2;
+    }
+};
+
+struct PM4CmdWaitRegMem64 {
+    enum class Engine : u32 { Me = 0u, Pfp = 1u };
+    enum class MemSpace : u32 { Register = 0u, Memory = 1u };
+    enum class Function : u32 {
+        Always = 0u,
+        LessThan = 1u,
+        LessThanEqual = 2u,
+        Equal = 3u,
+        NotEqual = 4u,
+        GreaterThanEqual = 5u,
+        GreaterThan = 6u,
+        Reserved = 7u
+    };
+
+    PM4Type3Header header;
+    union {
+        BitField<0, 3, Function> function;
+        BitField<4, 1, MemSpace> mem_space;
+        BitField<8, 1, Engine> engine;
+        u32 raw;
+    };
+    union {
+        BitField<0, 16, u32> reg;
+        BitField<2, 30, u32> poll_addr_lo;
+        BitField<0, 2, u32> swap;
+        u32 poll_addr_lo_raw;
+    };
+    u32 poll_addr_hi;
+    u32 ref_lo;
+    u32 ref_hi;
+    u32 mask_lo;
+    u32 mask_hi;
+    u32 poll_interval;
+
+    u64 GetAddress() const {
+        return (u64(poll_addr_hi) << 32) | (u64(poll_addr_lo) << 2);
+    }
+
+    u32 Reg() const {
+        return reg.Value();
+    }
+    
+    u64 Ref() const { return ref_lo | (u64(ref_hi) << 32); }
+    u64 Mask() const { return mask_lo | (u64(mask_hi) << 32); }
+
+    bool Test(std::span<const u32> regs, auto&& read_mem) const {
+        u64 value = mem_space.Value() == MemSpace::Memory ? read_mem(GetAddress()) : regs[Reg()];
+        // Note: For registers, it might still read 32-bit, but WaitRegMem64 usually implies 64-bit compare.
+        // If targeting a register, it might check a pair?
+        // documentation says: "Wait for a register or memory location to be equal/not equal/etc to a reference value."
+        // For memory it's 64-bit. For register, it's likely 32-bit or pair?
+        // Assuming memory is 64-bit.
+        
+        switch (function.Value()) {
+        case Function::Always: {
+            return true;
+        }
+        case Function::LessThan: {
+            return (value & Mask()) < Ref();
+        }
+        case Function::LessThanEqual: {
+            return (value & Mask()) <= Ref();
+        }
+        case Function::Equal: {
+            return (value & Mask()) == Ref();
+        }
+        case Function::NotEqual: {
+            return (value & Mask()) != Ref();
+        }
+        case Function::GreaterThanEqual: {
+            return (value & Mask()) >= Ref();
+        }
+        case Function::GreaterThan: {
+            return (value & Mask()) > Ref();
+        }
+        case Function::Reserved:
+            [[fallthrough]];
+        default: {
+            UNREACHABLE();
+        }
+        }
+    }
+};
+
+struct PM4CmdAtomicMem {
+    PM4Type3Header header;
+    union {
+        BitField<0, 7, u32> atomic_op;
+        BitField<30, 1, u32> engine; // 0=ME, 1=PFP
+        u32 raw;
+    };
+    u32 addr_lo;
+    u32 addr_hi;
+    u32 src_data_lo;
+    u32 src_data_hi;
+    u32 cmp_data_lo;
+    u32 cmp_data_hi;
+    u32 loop_interval;
+
+    template <typename T>
+    T* Address() const {
+        return reinterpret_cast<T*>(addr_lo | u64(addr_hi) << 32);
     }
 };
 

@@ -365,6 +365,24 @@ u64 Rasterizer::Flush() {
     return current_tick;
 }
 
+void Rasterizer::WriteEvent(AmdGpu::EventType event_type, VAddr address, u32 value) {
+    switch (event_type) {
+    case AmdGpu::EventType::CacheFlushAndInvEvent:
+    case AmdGpu::EventType::CsPartialFlush:
+    case AmdGpu::EventType::PsPartialFlush:
+    case AmdGpu::EventType::VsPartialFlush:
+    case AmdGpu::EventType::VgtFlush:
+    case AmdGpu::EventType::FlushAndInvCbPixelData:
+    case AmdGpu::EventType::FlushAndInvDbMeta:
+    case AmdGpu::EventType::FlushAndInvCbMeta:
+        // TODO: Implement finer grained flushing
+        CpSync();
+        break;
+    default:
+        break;
+    }
+}
+
 void Rasterizer::Finish() {
     scheduler.Finish();
 }
