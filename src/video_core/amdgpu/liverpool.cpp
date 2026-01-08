@@ -178,23 +178,24 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         case PM4ItOpcode::LoadConstRam: {
             const auto* load_const = reinterpret_cast<const PM4LoadConstRam*>(header);
             auto* memory = Core::Memory::Instance();
-            const u64 src_addr = load_const->Address<u64>();
+            const u64 src_addr = load_const->GetAddress();
             const u32 size = load_const->Size();
             if (!memory->TryCopyBacking(cblock.constants_heap.data() + load_const->Offset(),
                                         reinterpret_cast<const void*>(src_addr), size)) {
                 std::vector<u8> buffer(size);
                 memory->Read(src_addr, buffer.data(), size);
-                std::memcpy(cblock.constants_heap.data() + load_const->Offset(), buffer.data(), size);
+                std::memcpy(cblock.constants_heap.data() + load_const->Offset(), buffer.data(),
+                            size);
             }
             break;
         }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
             auto* memory = Core::Memory::Instance();
-            const u64 dst_addr = dump_const->Address<u64>();
+            const u64 dst_addr = dump_const->GetAddress();
             const u32 size = dump_const->Size();
             const void* src_ptr = cblock.constants_heap.data() + dump_const->Offset();
-            
+
             if (!memory->TryWriteBacking(reinterpret_cast<void*>(dst_addr), src_ptr, size)) {
                 memory->Write(dst_addr, src_ptr, size);
             }
@@ -213,8 +214,9 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::IndirectBufferConst: {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
-            auto task =
-                ProcessCeUpdate({indirect_buffer->Address<const u32>(), indirect_buffer->ib_size});
+            auto task = ProcessCeUpdate(
+                {reinterpret_cast<const u32*>(indirect_buffer->GetAddress()),
+                 indirect_buffer->ib_size});
             RESUME_CE(task);
 
             while (!task.handle.done()) {
@@ -676,16 +678,16 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto* set_base = reinterpret_cast<const PM4CmdSetBase*>(header);
                 switch (set_base->base_index) {
                 case PM4CmdSetBase::BaseIndex::DisplayListPatchTable:
-                    base_addr_display_list = set_base->Address<u64>();
+                    base_addr_display_list = set_base->GetAddress();
                     break;
                 case PM4CmdSetBase::BaseIndex::DrawIndexIndirPatchTable:
-                    indirect_args_addr = set_base->Address<u64>();
+                    indirect_args_addr = set_base->GetAddress();
                     break;
                 case PM4CmdSetBase::BaseIndex::LoadReg:
-                    base_addr_load_reg = set_base->Address<u64>();
+                    base_addr_load_reg = set_base->GetAddress();
                     break;
                 case PM4CmdSetBase::BaseIndex::IndirectData:
-                    base_addr_indirect_data = set_base->Address<u64>();
+                    base_addr_indirect_data = set_base->GetAddress();
                     break;
                 default:
                     LOG_WARNING(Render, "Unimplemented SetBase base_index: {}",
@@ -697,7 +699,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::AtomicMem: {
                 const auto* atomic_mem = reinterpret_cast<const PM4CmdAtomicMem*>(header);
                 auto* memory = Core::Memory::Instance();
-                const u64 addr = atomic_mem->Address<u64>();
+                const u64 addr = atomic_mem->GetAddress();
                 const u32 src = atomic_mem->src_data_lo;
                 const u32 cmp = atomic_mem->cmp_data_lo;
 
@@ -754,7 +756,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                           magic_enum::enum_name(event->event_index.Value()));
 
                 if (rasterizer) {
-                    rasterizer->WriteEvent(event->event_type.Value(), event->Address<VAddr>(),
+                    rasterizer->WriteEvent(event->event_type.Value(), event->GetAddress(),
                                            event->control.raw);
                 }
 
@@ -768,11 +770,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
-                        
+
                         const u32 stride_bytes = 1 << (2 + pixel_pipe_stat_control.stride.Value());
                         const u32 instance_mask = pixel_pipe_stat_control.instance_enable.Value();
                         auto* memory = Core::Memory::Instance();
-                        u64 current_addr = event->Address<u64>();
+                        u64 current_addr = event->GetAddress();
 
                         for (s32 i = 0; i < num_counter_pairs; ++i) {
                             if ((instance_mask >> i) & 1) {
@@ -793,18 +795,17 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEos: {
                 const auto* event_eos = reinterpret_cast<const PM4CmdEventWriteEos*>(header);
-                event_eos->SignalFence([](void* address, u64 data, u32 num_bytes) {
+                event_eos->SignalFence([](u64 address, u64 data, u32 num_bytes) {
                     auto* memory = Core::Memory::Instance();
-                    if (!memory->TryWriteBacking(address, &data, num_bytes)) {
-                        memcpy(address, &data, num_bytes);
-                    }
+                    memory->Write(address, &data, num_bytes);
                 });
                 if (event_eos->command == PM4CmdEventWriteEos::Command::GdsStore) {
                     ASSERT(event_eos->size == 1);
                     if (rasterizer) {
                         rasterizer->Finish();
                         const u32 value = rasterizer->ReadDataFromGds(event_eos->gds_index);
-                        *event_eos->Address() = value;
+                        const u64 addr = event_eos->GetAddress();
+                        Core::Memory::Instance()->Write(addr, &value, sizeof(u32));
                     }
                 }
                 break;
@@ -812,11 +813,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::EventWriteEop: {
                 const auto* event_eop = reinterpret_cast<const PM4CmdEventWriteEop*>(header);
                 event_eop->SignalFence(
-                    [](void* address, u64 data, u32 num_bytes) {
+                    [](u64 address, u64 data, u32 num_bytes) {
                         auto* memory = Core::Memory::Instance();
-                        if (!memory->TryWriteBacking(address, &data, num_bytes)) {
-                            memcpy(address, &data, num_bytes);
-                        }
+                        memory->Write(address, &data, num_bytes);
                     },
                     [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
                 break;
@@ -914,7 +913,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                          LOG_WARNING(Render, "WriteData to GDS unimplemented");
                      }
                 } else { // Memory (Sync/Async/TCL2)
-                    u64 address = write_data->Address<u64>();
+                    u64 address = write_data->GetAddress();
                     if (!write_data->wr_one_addr.Value()) {
                         Core::Memory::Instance()->Write(address, write_data->data, data_size);
                     } else {
@@ -973,9 +972,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::ReleaseMem: {
                 const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
                 release_mem->SignalFence(
-                    [](void* address, u64 data, u32 num_bytes) {
+                    [](u64 address, u64 data, u32 num_bytes) {
                         auto* memory = Core::Memory::Instance();
-                        memory->Write(reinterpret_cast<u64>(address), &data, num_bytes);
+                        memory->Write(address, &data, num_bytes);
                     },
                     [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
                 break;
@@ -1017,7 +1016,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::IndirectBuffer: {
                 const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
                 auto task = ProcessGraphics(
-                    {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, {});
+                    {reinterpret_cast<const u32*>(indirect_buffer->GetAddress()),
+                     indirect_buffer->ib_size},
+                    {});
                 RESUME_GFX(task);
 
                 while (!task.handle.done()) {
@@ -1441,7 +1442,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             ASSERT(write_data->dst_sel.Value() == 2 || write_data->dst_sel.Value() == 5);
             const u32 data_size = (header->type3.count.Value() - 2) * 4;
             if (!write_data->wr_one_addr.Value()) {
-                std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
+                Core::Memory::Instance()->Write(write_data->GetAddress(), write_data->data,
+                                                data_size);
             } else {
                 UNREACHABLE();
             }
@@ -1501,9 +1503,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
             release_mem->SignalFence(
-                [](void* address, u64 data, u32 num_bytes) {
+                [](u64 address, u64 data, u32 num_bytes) {
                     auto* memory = Core::Memory::Instance();
-                    memory->Write(reinterpret_cast<u64>(address), &data, num_bytes);
+                    memory->Write(address, &data, num_bytes);
                 },
                 [pipe_id = queue.pipe_id] {
                     Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
@@ -1513,7 +1515,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::AtomicMem: {
             const auto* atomic_mem = reinterpret_cast<const PM4CmdAtomicMem*>(header);
             auto* memory = Core::Memory::Instance();
-            const u64 addr = atomic_mem->Address<u64>();
+            const u64 addr = atomic_mem->GetAddress();
             const u32 src = atomic_mem->src_data_lo;
             const u32 cmp = atomic_mem->cmp_data_lo;
 
@@ -1570,7 +1572,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                       magic_enum::enum_name(event->event_index.Value()));
 
             if (rasterizer) {
-                rasterizer->WriteEvent(event->event_type.Value(), event->Address<VAddr>(),
+                rasterizer->WriteEvent(event->event_type.Value(), event->GetAddress(),
                                        event->control.raw);
             }
             break;

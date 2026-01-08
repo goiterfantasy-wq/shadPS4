@@ -484,11 +484,10 @@ struct PM4CmdEventWrite {
         PixelPipeStatControl control;
     };
 
-    template <typename T>
-    T Address() const {
+    u64 GetAddress() const {
         ASSERT(event_index.Value() >= EventIndex::ZpassDone &&
                event_index.Value() <= EventIndex::SampleStreamoutStatSx);
-        return std::bit_cast<T>((u64(address[1]) << 32u) | u64(address[0]));
+        return (u64(address[1]) << 32u) | u64(address[0]);
     }
 };
 
@@ -509,9 +508,8 @@ struct PM4CmdEventWriteEop {
     u32 data_lo; ///< Value that will be written to memory when event occurs
     u32 data_hi; ///< Value that will be written to memory when event occurs
 
-    template <typename T>
-    T* Address() const {
-        return reinterpret_cast<T*>(address_lo | u64(address_hi) << 32);
+    u64 GetAddress() const {
+        return address_lo | u64(address_hi) << 32;
     }
 
     u32 DataDWord() const {
@@ -523,7 +521,7 @@ struct PM4CmdEventWriteEop {
     }
 
     void SignalFence(auto&& write_mem, auto&& signal_irq) const {
-        u32* address = Address<u32>();
+        u64 address = GetAddress();
         switch (data_sel.Value()) {
         case DataSelect::None: {
             break;
@@ -729,17 +727,16 @@ struct PM4CmdWaitRegMem {
     u32 mask;
     u32 poll_interval;
 
-    template <typename T = u32*>
-    T Address() const {
-        return std::bit_cast<T>((uintptr_t(poll_addr_hi) << 32) | (poll_addr_lo << 2));
+    u64 GetAddress() const {
+        return (u64(poll_addr_hi) << 32) | (poll_addr_lo << 2);
     }
 
     u32 Reg() const {
         return reg.Value();
     }
 
-    bool Test(std::span<const u32> regs) const {
-        u32 value = mem_space.Value() == MemSpace::Memory ? *Address() : regs[Reg()];
+    bool Test(std::span<const u32> regs, auto&& read_mem) const {
+        u32 value = mem_space.Value() == MemSpace::Memory ? read_mem(GetAddress()) : regs[Reg()];
         switch (function.Value()) {
         case Function::Always: {
             return true;
@@ -798,9 +795,8 @@ struct PM4CmdWriteData {
         addr64 = static_cast<u64>(addr);
     }
 
-    template <typename T>
-    T Address() const {
-        return reinterpret_cast<T>(addr64);
+    u64 GetAddress() const {
+        return addr64;
     }
 };
 
@@ -829,9 +825,8 @@ struct PM4CmdEventWriteEos {
         BitField<16, 16, u32> size; ///< Number of DWs to read from the GDS
     };
 
-    template <typename T = u32*>
-    T Address() const {
-        return reinterpret_cast<T>(address_lo | u64(address_hi) << 32);
+    u64 GetAddress() const {
+        return address_lo | u64(address_hi) << 32;
     }
 
     u32 DataDWord() const {
@@ -842,7 +837,7 @@ struct PM4CmdEventWriteEos {
         const auto cmd = command.Value();
         switch (cmd) {
         case Command::SignalFence: {
-            write_mem(Address(), DataDWord(), sizeof(u32));
+            write_mem(GetAddress(), DataDWord(), sizeof(u32));
             break;
         }
         case Command::GdsStore: {
@@ -888,9 +883,8 @@ struct PM4DumpConstRam {
     u32 addr_lo;
     u32 addr_hi;
 
-    template <typename T>
-    T Address() const {
-        return reinterpret_cast<T>((u64(addr_hi) << 32u) | addr_lo);
+    u64 GetAddress() const {
+        return (u64(addr_hi) << 32u) | addr_lo;
     }
 
     [[nodiscard]] u32 Offset() const {
@@ -915,9 +909,8 @@ struct PM4LoadConstRam {
         u32 dw2;
     };
 
-    template <typename T>
-    T Address() const {
-        return reinterpret_cast<T>((u64(addr_hi) << 32u) | addr_lo);
+    u64 GetAddress() const {
+        return (u64(addr_hi) << 32u) | addr_lo;
     }
 
     [[nodiscard]] u32 Offset() const {
@@ -967,9 +960,8 @@ struct PM4CmdIndirectBuffer {
         u32 dw2;
     };
 
-    template <typename T>
-    T* Address() const {
-        return reinterpret_cast<T*>((u64(ibase_hi) << 32u) | ibase_lo);
+    u64 GetAddress() const {
+        return (u64(ibase_hi) << 32u) | ibase_lo;
     }
 };
 
@@ -1004,9 +996,8 @@ struct PM4CmdReleaseMem {
     };
     u32 data_hi;
 
-    template <typename T>
-    T* Address() const {
-        return reinterpret_cast<T*>(address_lo | u64(address_hi) << 32);
+    u64 GetAddress() const {
+        return address_lo | u64(address_hi) << 32;
     }
 
     u32 DataDWord() const {
@@ -1018,7 +1009,7 @@ struct PM4CmdReleaseMem {
     }
 
     void SignalFence(auto&& write_mem, auto&& signal_irq) const {
-        u32* address = Address<u32>();
+        u64 address = GetAddress();
         switch (data_sel.Value()) {
         case DataSelect::Data32Low: {
             write_mem(address, DataDWord(), sizeof(u32));
@@ -1077,13 +1068,12 @@ struct PM4CmdSetBase {
     u32 address0;
     u32 address1;
 
-    template <typename T>
-    T Address() const {
+    u64 GetAddress() const {
         ASSERT(base_index == BaseIndex::DisplayListPatchTable ||
                base_index == BaseIndex::DrawIndexIndirPatchTable ||
                base_index == BaseIndex::LoadReg ||
                base_index == BaseIndex::IndirectData);
-        return reinterpret_cast<T>(address0 | (u64(address1 & 0xffff) << 32u));
+        return address0 | (u64(address1 & 0xffff) << 32u);
     }
 };
 
@@ -1118,9 +1108,8 @@ struct PM4CmdDispatchIndirectMec {
     u32 address1;
     u32 dispatch_initiator; ///< Dispatch Initiator Register
 
-    template <typename T>
-    T Address() const {
-        return std::bit_cast<T>(address0 | (u64(address1 & 0xffff) << 32u));
+    u64 GetAddress() const {
+        return address0 | (u64(address1 & 0xffff) << 32u);
     }
 };
 
@@ -1403,9 +1392,8 @@ struct PM4CmdAtomicMem {
     u32 cmp_data_hi;
     u32 loop_interval;
 
-    template <typename T>
-    T* Address() const {
-        return reinterpret_cast<T*>(addr_lo | u64(addr_hi) << 32);
+    u64 GetAddress() const {
+        return addr_lo | u64(addr_hi) << 32;
     }
 };
 
