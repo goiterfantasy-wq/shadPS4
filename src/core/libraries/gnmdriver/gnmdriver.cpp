@@ -336,7 +336,7 @@ void PS4_SYSV_ABI sceGnmDingDong(u32 gnm_vqid, u32 next_offs_dw) {
         const auto* indirect_buffer =
             reinterpret_cast<const PM4CmdIndirectBuffer*>(acb_span.data());
         if (indirect_buffer->header.opcode == PM4ItOpcode::IndirectBuffer) {
-            base_addr = reinterpret_cast<uintptr_t>(indirect_buffer->Address<const u32>());
+            base_addr = static_cast<uintptr_t>(indirect_buffer->GetAddress());
             acb = {reinterpret_cast<const u32*>(base_addr), indirect_buffer->ib_size};
         }
 
