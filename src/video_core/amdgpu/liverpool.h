@@ -199,6 +199,9 @@ private:
     u32 num_mapped_queues{1u}; // GFX is always available
 
     VAddr indirect_args_addr{};
+    VAddr base_addr_display_list{};
+    VAddr base_addr_load_reg{};
+    VAddr base_addr_indirect_data{};
     u32 num_counter_pairs{};
     u64 pixel_counter{};
 

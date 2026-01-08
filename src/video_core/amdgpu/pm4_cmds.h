@@ -1052,6 +1052,8 @@ struct PM4CmdSetBase {
         DrawIndexIndirPatchTable = 0b0001,
         GdsPartition = 0b0010,
         CePartition = 0b0011,
+        LoadReg = 0b0100,
+        IndirectData = 0b0101,
     };
 
     PM4Type3Header header;
@@ -1065,7 +1067,9 @@ struct PM4CmdSetBase {
     template <typename T>
     T Address() const {
         ASSERT(base_index == BaseIndex::DisplayListPatchTable ||
-               base_index == BaseIndex::DrawIndexIndirPatchTable);
+               base_index == BaseIndex::DrawIndexIndirPatchTable ||
+               base_index == BaseIndex::LoadReg ||
+               base_index == BaseIndex::IndirectData);
         return reinterpret_cast<T>(address0 | (u64(address1 & 0xffff) << 32u));
     }
 };

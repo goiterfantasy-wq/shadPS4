@@ -459,7 +459,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
-                LOG_TRACE(Render, "Unimplemented IT_SET_PREDICATION");
+                const auto* set_predication = reinterpret_cast<const PM4CmdSetPredication*>(header);
+                LOG_TRACE(Render, "IT_SET_PREDICATION: boolean={}, hint={}, op={}, continue={}",
+                          set_predication->predicationBoolean.Value(), set_predication->hint.Value(),
+                          set_predication->predOp.Value(), set_predication->continueBit.Value());
                 break;
             }
             case PM4ItOpcode::DrawPreamble: {
@@ -658,8 +661,24 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::SetBase: {
                 const auto* set_base = reinterpret_cast<const PM4CmdSetBase*>(header);
-                ASSERT(set_base->base_index == PM4CmdSetBase::BaseIndex::DrawIndexIndirPatchTable);
-                indirect_args_addr = set_base->Address<u64>();
+                switch (set_base->base_index) {
+                case PM4CmdSetBase::BaseIndex::DisplayListPatchTable:
+                    base_addr_display_list = set_base->Address<u64>();
+                    break;
+                case PM4CmdSetBase::BaseIndex::DrawIndexIndirPatchTable:
+                    indirect_args_addr = set_base->Address<u64>();
+                    break;
+                case PM4CmdSetBase::BaseIndex::LoadReg:
+                    base_addr_load_reg = set_base->Address<u64>();
+                    break;
+                case PM4CmdSetBase::BaseIndex::IndirectData:
+                    base_addr_indirect_data = set_base->Address<u64>();
+                    break;
+                default:
+                    LOG_WARNING(Render, "Unimplemented SetBase base_index: {}",
+                                static_cast<u32>(set_base->base_index.Value()));
+                    break;
+                }
                 break;
             }
             case PM4ItOpcode::EventWrite: {
