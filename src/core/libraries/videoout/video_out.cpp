@@ -445,8 +445,9 @@ s32 PS4_SYSV_ABI sceVideoOutConfigureOutputMode_(s32 handle, u32 reserved, const
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceVideoOutSetWindowModeMargins(s32 handle, s32 top, s32 bottom) {
-    LOG_ERROR(Lib_VideoOut, "(STUBBED) called top = {}, bottom = {}", top, bottom);
+s32 PS4_SYSV_ABI sceVideoOutSetWindowModeMargins(s32 handle, s32 left, s32 top, s32 right, s32 bottom) {
+    LOG_INFO(Lib_VideoOut, "handle = {}, left = {}, top = {}, right = {}, bottom = {}",
+             handle, left, top, right, bottom);
     return ORBIS_OK;
 }
 
